@@ -1,0 +1,28 @@
+package main
+
+import (
+	"fmt"
+)
+
+func main() {
+	// Concise syntax!
+	m := map[string]int{"a": 1, "b": 2}
+	m := m.Set("c", 3)
+
+	l := []int{10, 20}
+	l := l.Append(30)
+
+	fmt.Printf("Map size: %d\n", len(m))
+
+	val, ok := m["a"]
+	fmt.Printf("Map value at a: %d, ok: %v\n", val, ok)
+
+	fmt.Printf("List size: %d\n", len(l))
+	fmt.Printf("List value at index 2: %d\n", l[2])
+
+	fmt.Print("Map All: ")
+	for k, v := range m.All() {
+		fmt.Printf("%s:%d ", k, v)
+	}
+	fmt.Println()
+}
