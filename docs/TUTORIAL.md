@@ -1,6 +1,6 @@
 # Getting Started with ImGo
 
-ImGo is a functional language that transpiles to Go. This guide will help you set up your first ImGo project.
+ImGo is a functional-first language that transpiles to Go. This guide will help you set up your first ImGo project.
 
 ## 1. Installation
 Ensure you have a recent version of Go (1.23 or newer) installed.
@@ -48,18 +48,22 @@ Use the `imgo` CLI to generate standard Go code, then run it.
 go run hello_imgo_gen.go
 ```
 
-## 4. Key Differences from Go
-If you try to use standard Go mutation, ImGo will stop you:
+## 4. Key Prohibitions
+ImGo enforces immutability by strictly prohibiting features that allow in-place mutation:
 
 ```go
-// ❌ Error: assignment (=) is prohibited
+// ❌ Error: assignment (=) and compound assignments (+=, *=, etc.) are prohibited
 x = 10 
+x += 5
 
-// ❌ Error: pointers are prohibited
+// ❌ Error: pointers (*T, *p) and address-of (&x) are prohibited
 p := &x 
 
-// ❌ Error: mutation (++) is prohibited
+// ❌ Error: mutation (++, --) is prohibited
 x++ 
+
+// ❌ Error: the 'delete' builtin is prohibited. Use m.Delete(k) instead.
+delete(m, "key")
 ```
 
-By enforcing these rules, ImGo ensures that your logic is free of data races and hidden side effects, while still being as fast as the Go runtime allows.
+By enforcing these rules, ImGo ensures that your logic is free of data races and hidden side effects, while staying as close to standard Go syntax as possible.

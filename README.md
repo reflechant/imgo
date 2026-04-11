@@ -1,65 +1,57 @@
-# 🚀 ImGo (Immutable Go)
+# 🚀 ImGo
 
-**ImGo** is a persistent functional language transpiled to Go. It brings Clojure-inspired safety, deep immutability, and structural sharing to the Go ecosystem.
+**ImGo** is Go with Clojure-like immutability. While it allows non-pure IO and other side effects (much like Clojure), its core is functional in its approach to data. The main idea is to stay as close to Go as possible while providing the safety and reasoning guarantees that deep immutability provides.
 
-"ImGo" stands for **Immutable Go**, and it's also a pun: *In my gorgeous opinion*, this is how high-performance concurrency should be written.
+ImGo isn't just about prohibiting mutation; it's about shifting your mental model from "updating state in-place" to "transforming data through a flow." This results in code that is simpler to reason about, trivial to parallelize, and fundamentally more error-proof.
 
-## ✨ The ImGo Philosophy
+## 🛠️ How it Works
+ImGo is a **transpiler** that generates standard, optimized Go code from `.im` source files. It validates your code against strict immutability rules and lowers functional patterns (like identifier re-binding and recursive nested updates) into efficient Go code that leverages persistent data structures.
 
-- **No Mutation:** Standard assignment (`=`) is prohibited.
-- **No Pointers:** Address-of (`&`) and pointer types (`*T`) are forbidden.
-- **Shadowing is First-Class:** Use `:=` to create new versions of your state. `var` is prohibited inside functions.
-- **SSA-style Immutability:** The transpiler mangles shadowed names (e.g., `x_1`, `x_2`) so that closures capture the specific version of a variable they were defined with, exactly like Clojure's `let` bindings.
-- **Package Globals (def):** Use `var` for package-level declarations. They follow Go's zero-value initialization rules.
-- **Persistent by Default:** Uses high-performance Hash Array Mapped Tries (HAMT) and Vector Tries for collections.
+## ⚡ Quick Start (For the Impatient)
 
-## 🛠️ How It Works
+```bash
+# 1. Build the ImGo transpiler
+go build -o imgo ./cmd/imgo
 
-### 1. The Source (`.im` files)
-Write your logic in `.im` files. ImGo enforces a strict functional core:
+# 2. Transpile the examples
+./imgo example/
 
-```go
-package logic
-
-import "github.com/rg/imgo/pkg/persistent"
-
-func main() {
-    m := map[string]int{"a": 1}
-    m := m.Set("b", 2) // Shadowing! This is a new 'm'.
-    
-    // x = 10 // ❌ COMPILE ERROR: Assignment is forbidden.
-    // p := &m // ❌ COMPILE ERROR: Pointers are forbidden.
-}
+# 3. Run a generated example
+go run example/main_imgo_gen.go
 ```
 
-### 2. The Transpilation
-The `imgo` tool parses your `.im` files, validates the AST against the ImGo rules, and generates optimized, standard Go code (`_imgo_gen.go`).
+## 🔍 Differences Between Go and ImGo
+
+### 🚫 Prohibited Operators and Builtins
+To ensure deep immutability, the following Go features are strictly prohibited:
+*   **Direct Assignment:** The `=` operator is forbidden.
+*   **Compound Assignments:** All operators like `+=`, `-=`, `*=`, etc., are forbidden.
+*   **Increments/Decrements:** `++` and `--` are forbidden.
+*   **Pointers:** Pointer types (`*T`), pointer dereferences (`*p`), and the address-of operator (`&`) are forbidden.
+*   **Builtin `delete`:** The `delete(m, k)` builtin is prohibited. Use the `.Delete(k)` or `.DeleteIn(path...)` methods instead.
+*   **Local `var`:** Using the `var` keyword inside functions or blocks is prohibited. Use `:=` for all local bindings.
+
+### 🌊 Immutable Data Flow
+Instead of mutating objects, you derive new data from existing data.
+*   **Identifier Re-binding:** You can "reuse" a name with `:=` to represent the next step in your data's transformation. 
+*   **Closure Safety:** The transpiler ensures that if a function captures a variable, it captures the exact version present at the time of definition, even if the identifier is re-bound later in the flow.
+
+### 📦 Persistent Collections
+ImGo replaces Go's built-in mutable maps and slices with high-performance, persistent data structures (HAMT and Vector Tries) that support structural sharing.
+*   **Maps:** `map[K]V` is sugar for `persistent.Map[K, V]`.
+*   **Lists:** `[]T` is sugar for `persistent.List[T]`.
+*   **Methods:** Operations like `.Set(k, v)`, `.Append(v)`, and `.Delete(k)` return a **new** collection, leaving the original instance entirely unchanged.
+
+### ✨ Syntactic Sugar & Convenience
+*   **Nil Punning:** `nil` is a valid empty collection. Operations on `nil` collections work gracefully without panicking.
+*   **Deep Updates:** Provided methods `SetIn`, `UpdateIn`, and `DeleteIn` handle deeply nested maps, automatically creating intermediate maps as needed.
+*   **Native Indexing:** Standard Go indexing `m["key"]` and `l[i]` is desugared to safe `Get` or `Lookup` method calls.
 
 ## 📚 Documentation
 - **[Language Specification](docs/SPEC.md)**: Formal rules of ImGo.
 - **[EBNF Grammar](docs/GRAMMAR.md)**: Formal syntax definition.
 - **[Library Reference](docs/REFERENCE.md)**: API for persistent collections.
 - **[Getting Started Tutorial](docs/TUTORIAL.md)**: Build your first ImGo program.
-
-## 🗺️ Phase 1 Goals (Completed)
-- [x] **Project Rename:** Transitioned from Immugo to ImGo.
-- [x] **New File Extension:** Support for `.im` source files.
-- [x] **Mutation Stripping:** Strict rejection of `=`, `++`, and `--`.
-- [x] **Pointer Stripping:** Strict rejection of `*` and `&`.
-- [x] **Shadowing Lowering:** Automatic conversion of shadowing `:=` into Go-compatible assignments.
-
-## 📦 Installation & Usage
-
-```bash
-# Build the ImGo transpiler
-go build -o imgo ./cmd/imgo
-
-# Transpile your project
-./imgo ./path/to/your/files.im
-
-# Run the generated Go code
-go run ./path/to/your/files_imgo_gen.go
-```
 
 ---
 *Built with ❤️ for the functional programming community.*

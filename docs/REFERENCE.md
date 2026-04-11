@@ -5,45 +5,78 @@ The `persistent` package is at the heart of ImGo's functional semantics. It prov
 ## 1. Package `persistent`
 
 ### 1.1 `Map[K comparable, V any]`
-A persistent Hash Array Mapped Trie (HAMT) based on Bagwell's "Ideal Hash Trees."
+A persistent Hash Array Mapped Trie (HAMT) based on structural sharing.
 
 - **`NewMap[K comparable, V any]() Map[K, V]`**
   Initializes an empty map.
-- **`Assoc(m, k, v) Map[K, V]`**
-  Functional entry point for `.Set()`. Handles `nil` maps gracefully.
-- **`Update(m, k, fn) Map[K, V]`**
-  Functional entry point for applying a transformation function `func(V) V` to a key.
-- **`SetIn(k1, k2, ..., v) Map`**
-  (Transpiler Sugar) Performs a deep update, creating intermediate maps as needed. Infinite depth.
-- **`UpdateIn(k1, k2, ..., fn) Map`**
-  (Transpiler Sugar) Performs a deep update by applying `fn` to the leaf value. Infinite depth.
-- **`Lookup(m, k) (V, bool)`**
+- **`(m Map) Set(k K, v V) Map[K, V]`**
+  Returns a new map with the key `k` set to value `v`.
+- **`(m Map) Delete(k K) Map[K, V]`**
+  Returns a new map with the key `k` removed.
+- **`(m Map) Update(k K, fn func(V) V) Map[K, V]`**
+  Returns a new map by applying a transformation function to the value at key `k`.
+- **`(m Map) SetIn(path... K, v V) Map`**
+  Performs a deep update, automatically creating intermediate maps as needed.
+- **`(m Map) UpdateIn(path... K, fn func(V) V) Map`**
+  Performs a deep update by applying `fn` to the leaf value.
+- **`(m Map) DeleteIn(path... K) Map`**
+  Performs a deep removal of a key in a nested map.
+- **`(m Map) Lookup(k K) (V, bool)`**
   Look up a value by key. Returns the zero value and `false` if the key or map is `nil`.
-- **`Get(m, k) V`**
+- **`(m Map) Get(k K) V`**
   Returns the value or the zero value. Chainable for deep reads.
-- **`Len() int`**
+- **`(m Map) Len() int`**
   Returns the number of elements in the map.
-- **`All() iter.Seq2[K, V]`**
+- **`(m Map) All() iter.Seq2[K, V]`**
   Returns a Go 1.23 iterator for use in `for...range` loops.
 
 ### 1.2 `List[T any]`
-A bit-partitioned vector trie supporting O(log32 n) access and updates.
+A persistent bit-partitioned vector trie supporting efficient access and updates.
 
 - **`NewList[T any]() List[T]`**
   Initializes an empty list.
-- **`Append(v T) List[T]`**
+- **`(l List) Append(v T) List[T]`**
   Returns a new list with the value appended at the end.
-- **`Get(i int) T`**
-  Returns the value at index `i`. Panics if index is out of bounds.
-- **`Len() int`**
+- **`(l List) Get(i int) T`**
+  Returns the value at index `i`.
+- **`(l List) Lookup(i int) (T, bool)`**
+  Look up a value by index. Returns `false` if out of bounds.
+- **`(l List) Set(i int, v T) List[T]`**
+  Returns a new list with the value at index `i` replaced.
+- **`(l List) Len() int`**
   Returns the number of elements in the list.
-- **`Slice(low, high int) List[T]`**
-  Returns a persistent sub-slice in constant time.
-- **`All() iter.Seq[T]`**
+- **`(l List) All() iter.Seq[T]`**
   Returns a Go 1.23 iterator for use in `for...range` loops.
 
-## 2. Global Keywords
-ImGo leverages Go's keywords with modified semantics:
-- **`len(c)`**: Invokes `c.Len()` if `c` is a persistent collection.
-- **`make()`**: Not supported for maps or slices. Use literals or `NewX()` functions instead.
-- **`copy()`**: Not supported. Use `.Slice()` or assignment for structural sharing.
+## 2. Identifier Re-binding (Shadowing)
+In ImGo, names are not "variables" in the mutable sense; they are labels for values in a data flow.
+
+### 2.1 The Flow Pattern
+When you write `x := x + 1`, you are not incrementing a memory location. You are creating a new binding `x` that is derived from the previous value of `x`.
+
+### 2.2 SSA Mangling & Closure Safety
+To maintain strict immutability at the machine level, the transpiler uses **Static Single Assignment (SSA) mangling**.
+```go
+// ImGo (.im)
+x := 10
+f := func() { fmt.Println(x) }
+x := 20
+f() // Prints 10
+```
+Is transpiled to:
+```go
+// Go (_imgo_gen.go)
+x_1 := 10
+f_2 := func() { fmt.Println(x_1) }
+x_3 := 20
+f_2() // Still refers to x_1
+```
+This ensures that closures are always "pure" and free from data races caused by later re-bindings in the same scope.
+
+## 3. Global Keywords and Semantics
+ImGo leverages Go's built-in functions with modified functional semantics:
+- **`len(c)`**: Desugars to `persistent.Len(c)`.
+- **`delete(m, k)`**: **PROHIBITED**. Use `m.Delete(k)` instead.
+- **`make()`**: Not supported for collections. Use literals or `NewMap`/`NewList`.
+- **Pointers**: `*T`, `*p`, and `&x` are **PROHIBITED**.
+- **Assignment**: `=` is **PROHIBITED**. Use `:=` for all local bindings.
