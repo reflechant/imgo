@@ -7,7 +7,7 @@ ImGo isn't just about prohibiting mutation; it's about shifting your mental mode
 ## 🛠️ How it Works
 ImGo is a **transpiler** that generates standard, optimized Go code from `.im` source files. It validates your code against strict immutability rules and lowers functional patterns (like identifier re-binding and recursive nested updates) into efficient Go code that leverages persistent data structures.
 
-## ⚡ Quick Start (For the Impatient)
+## ⚡ Quick Start
 
 ```bash
 # 1. Build the ImGo transpiler
