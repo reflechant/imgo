@@ -175,6 +175,15 @@ func main() {
 }`,
 			wantErr: "address-of (&) is prohibited",
 		},
+		{
+			name: "Prohibited delete builtin",
+			code: `package main
+func main() {
+    m := map[string]int{"a": 1}
+    delete(m, "a")
+}`,
+			wantErr: "'delete' builtin is prohibited",
+		},
 	}
 
 	for _, tt := range tests {

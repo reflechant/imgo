@@ -67,23 +67,28 @@ func addPersistentImport(file *ast.File) {
 }
 
 func rewriteType(typ ast.Expr) ast.Expr {
+	if typ == nil {
+		return nil
+	}
 	switch t := typ.(type) {
 	case *ast.MapType:
 		return &ast.IndexListExpr{
 			X: &ast.SelectorExpr{
-				X:   ast.NewIdent("persistent"),
+				X:   setPos(ast.NewIdent("persistent"), t.Pos()),
 				Sel: ast.NewIdent("Map"),
 			},
 			Indices: []ast.Expr{rewriteType(t.Key), rewriteType(t.Value)},
+			Lbrack:  t.Pos(),
 		}
 	case *ast.ArrayType:
 		if t.Len == nil {
 			return &ast.IndexListExpr{
 				X: &ast.SelectorExpr{
-					X:   ast.NewIdent("persistent"),
+					X:   setPos(ast.NewIdent("persistent"), t.Pos()),
 					Sel: ast.NewIdent("List"),
 				},
 				Indices: []ast.Expr{rewriteType(t.Elt)},
+				Lbrack:  t.Pos(),
 			}
 		}
 	}
@@ -124,7 +129,7 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, counter *int) ast.Stmt 
 					*counter++
 					mangled := fmt.Sprintf("%s_%d", ident.Name, *counter)
 					env[len(env)-1][ident.Name] = mangled
-					newNames[j] = ast.NewIdent(mangled)
+					newNames[j] = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
 				} else {
 					newNames[j] = lhs
 				}
@@ -196,7 +201,7 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, counter *int) ast.Stmt 
 						*counter++
 						mangled := fmt.Sprintf("%s_%d", name.Name, *counter)
 						env[len(env)-1][name.Name] = mangled
-						vs.Names[i] = ast.NewIdent(mangled)
+						vs.Names[i] = &ast.Ident{Name: mangled, NamePos: name.Pos()}
 					}
 					if vs.Type != nil { vs.Type = rewriteType(vs.Type) }
 					for i, val := range vs.Values {
@@ -220,7 +225,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		if env != nil {
 			for i := len(env) - 1; i >= 0; i-- {
 				if mangled, ok := env[i][e.Name]; ok {
-					return ast.NewIdent(mangled)
+					return &ast.Ident{Name: mangled, NamePos: e.Pos()}
 				}
 			}
 		}
@@ -230,6 +235,19 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		e.Y = rewriteExpr(e.Y, env, counter, false)
 		return e
 	case *ast.CallExpr:
+		// Specialized handling for builtins
+		if ident, ok := e.Fun.(*ast.Ident); ok {
+			if ident.Name == "len" && len(e.Args) == 1 {
+				return setPos(&ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
+						Sel: ast.NewIdent("Len"),
+					},
+					Args: []ast.Expr{rewriteExpr(e.Args[0], env, counter, false)},
+				}, e.Pos())
+			}
+		}
+
 		e.Fun = rewriteExpr(e.Fun, env, counter, false)
 		for i, arg := range e.Args {
 			e.Args[i] = rewriteExpr(arg, env, counter, false)
@@ -237,12 +255,10 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 
 		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
 			// m.Set(k, v) -> m.Set(k, v)
-			if sel.Sel.Name == "Set" || sel.Sel.Name == "Append" {
+			if sel.Sel.Name == "Set" || sel.Sel.Name == "Append" || sel.Sel.Name == "Delete" {
 				return e
 			}
 			if sel.Sel.Name == "SetIn" {
-				// Infinite Depth expansion for SetIn
-				// args: [k1, k2, ..., v]
 				N := len(e.Args) - 1
 				targets := make([]ast.Expr, N)
 				targets[0] = sel.X
@@ -255,7 +271,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						Args: []ast.Expr{e.Args[i-1]},
 					}
 				}
-				var res ast.Expr = e.Args[N] // The value
+				var res ast.Expr = e.Args[N]
 				for i := N - 1; i >= 0; i-- {
 					res = &ast.CallExpr{
 						Fun: &ast.SelectorExpr{
@@ -265,11 +281,9 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						Args: []ast.Expr{e.Args[i], res},
 					}
 				}
-				return res
+				return setPos(res, e.Pos())
 			}
 			if sel.Sel.Name == "UpdateIn" {
-				// Infinite Depth expansion for UpdateIn
-				// args: [k1, k2, ..., fn]
 				N := len(e.Args) - 1
 				targets := make([]ast.Expr, N)
 				targets[0] = sel.X
@@ -282,7 +296,6 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						Args: []ast.Expr{e.Args[i-1]},
 					}
 				}
-				// The leaf operation is Update
 				var res ast.Expr = &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   targets[N-1],
@@ -290,7 +303,6 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 					},
 					Args: []ast.Expr{e.Args[N-1], e.Args[N]},
 				}
-				// Then build back up with Set
 				for i := N - 2; i >= 0; i-- {
 					res = &ast.CallExpr{
 						Fun: &ast.SelectorExpr{
@@ -300,17 +312,38 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						Args: []ast.Expr{e.Args[i], res},
 					}
 				}
-				return res
+				return setPos(res, e.Pos())
 			}
-		}
-
-		if ident, ok := e.Fun.(*ast.Ident); ok && ident.Name == "len" && len(e.Args) == 1 {
-			return &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   ast.NewIdent("persistent"),
-					Sel: ast.NewIdent("Len"),
-				},
-				Args: []ast.Expr{e.Args[0]},
+			if sel.Sel.Name == "DeleteIn" {
+				N := len(e.Args)
+				targets := make([]ast.Expr, N)
+				targets[0] = sel.X
+				for i := 1; i < N; i++ {
+					targets[i] = &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   targets[i-1],
+							Sel: ast.NewIdent("Get"),
+						},
+						Args: []ast.Expr{e.Args[i-1]},
+					}
+				}
+				var res ast.Expr = &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   targets[N-1],
+						Sel: ast.NewIdent("Delete"),
+					},
+					Args: []ast.Expr{e.Args[N-1]},
+				}
+				for i := N - 2; i >= 0; i-- {
+					res = &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   targets[i],
+							Sel: ast.NewIdent("Set"),
+						},
+						Args: []ast.Expr{e.Args[i], res},
+					}
+				}
+				return setPos(res, e.Pos())
 			}
 		}
 		return e
@@ -318,29 +351,28 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		e.X = rewriteExpr(e.X, env, counter, false)
 		return e
 	case *ast.IndexExpr:
-		// x[i] -> x.Lookup(i) (if wantTwoValues) or x.Get(i)
 		method := "Get"
 		if wantTwoValues {
 			method = "Lookup"
 		}
-		return &ast.CallExpr{
+		return setPos(&ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   rewriteExpr(e.X, env, counter, false),
 				Sel: ast.NewIdent(method),
 			},
 			Args: []ast.Expr{rewriteExpr(e.Index, env, counter, false)},
-		}
+		}, e.Pos())
 	case *ast.CompositeLit:
 		if mt, ok := e.Type.(*ast.MapType); ok {
-			var res ast.Expr = &ast.CallExpr{
+			var res ast.Expr = setPos(&ast.CallExpr{
 				Fun: &ast.IndexListExpr{
 					X: &ast.SelectorExpr{
-						X:   ast.NewIdent("persistent"),
+						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 						Sel: ast.NewIdent("NewMap"),
 					},
 					Indices: []ast.Expr{rewriteType(mt.Key), rewriteType(mt.Value)},
 				},
-			}
+			}, e.Pos())
 			for _, el := range e.Elts {
 				kv := el.(*ast.KeyValueExpr)
 				res = &ast.CallExpr{
@@ -354,15 +386,15 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 			return res
 		}
 		if st, ok := e.Type.(*ast.ArrayType); ok && st.Len == nil {
-			var res ast.Expr = &ast.CallExpr{
+			var res ast.Expr = setPos(&ast.CallExpr{
 				Fun: &ast.IndexListExpr{
 					X: &ast.SelectorExpr{
-						X:   ast.NewIdent("persistent"),
+						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 						Sel: ast.NewIdent("NewList"),
 					},
 					Indices: []ast.Expr{rewriteType(st.Elt)},
 				},
-			}
+			}, e.Pos())
 			for _, el := range e.Elts {
 				res = &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
@@ -397,4 +429,21 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 	}
 
 	return expr
+}
+
+func setPos(n ast.Expr, pos token.Pos) ast.Expr {
+	if n == nil || pos == token.NoPos {
+		return n
+	}
+	switch e := n.(type) {
+	case *ast.Ident:
+		e.NamePos = pos
+	case *ast.CallExpr:
+		e.Lparen = pos
+	case *ast.SelectorExpr:
+		setPos(e.X, pos)
+	case *ast.IndexListExpr:
+		e.Lbrack = pos
+	}
+	return n
 }

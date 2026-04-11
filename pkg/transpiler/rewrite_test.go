@@ -178,20 +178,16 @@ func main() {
             },
         },
         {
-            name: "Slice and TypeAssert",
+            name: "Delete and DeleteIn expansion",
             input: `package main
 func main() {
-    s := []int{1, 2, 3}
-    s2 := s[:1]
-    s3 := s[1:]
-    var a any = s
-    s4 := a.(map[string]int)
+    m := map[string]any{"a": 1}
+    m := m.Delete("a")
+    m := m.DeleteIn("a", "b")
 }`,
             expected: []string{
-                "s2_2 := s_1[:1]",
-                "s3_3 := s_1[1:]",
-                "var a_4 any = s_1",
-                "s4_5 := a_4.(persistent.Map[string, int])",
+                "m_2 := m_1.Delete(\"a\")",
+                "m_3 := m_2.Set(\"a\", m_2.Get(\"a\").Delete(\"b\"))",
             },
         },
 	}

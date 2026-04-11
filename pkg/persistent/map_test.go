@@ -189,4 +189,35 @@ func TestMap(t *testing.T) {
 			t.Errorf("Expected submap len 2, got %d", sub.Len())
 		}
 	})
+
+	t.Run("DeleteIn", func(t *testing.T) {
+		m := NewMap[string, any]().SetIn([]string{"a", "b", "c"}, 100)
+		m2 := m.DeleteIn([]string{"a", "b", "c"})
+		val := m2.Get("a")
+		subA := val.(Map[string, any])
+		val = subA.Get("b")
+		subB := val.(Map[string, any])
+		if subB.Len() != 0 {
+			t.Errorf("Expected empty submap after DeleteIn, got %d", subB.Len())
+		}
+
+		// Empty path
+		m3 := m.DeleteIn([]string{})
+		if m3.Len() != 1 {
+			t.Errorf("Empty path DeleteIn should not change map")
+		}
+
+		// Path not found
+		m4 := m.DeleteIn([]string{"a", "x"})
+		if m4.Len() != 1 {
+			t.Errorf("Non-existent path DeleteIn should not change map")
+		}
+
+		// Intermediate not a map
+		m5 := NewMap[string, any]().Set("a", 123)
+		m6 := m5.DeleteIn([]string{"a", "b"})
+		if m6.Get("a") != 123 {
+			t.Errorf("DeleteIn on non-map intermediate should not change it")
+		}
+	})
 }

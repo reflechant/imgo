@@ -46,6 +46,12 @@ func Validate(fset *token.FileSet, file *ast.File) error {
 				walkErr = fmt.Errorf("address-of (&) is prohibited in ImGo at %v.", fset.Position(node.Pos()))
 				return false
 			}
+		case *ast.CallExpr:
+			// Prohibit 'delete' builtin as it implies in-place mutation.
+			if ident, ok := node.Fun.(*ast.Ident); ok && ident.Name == "delete" {
+				walkErr = fmt.Errorf("'delete' builtin is prohibited in ImGo at %v. Use '.Delete(k)' and shadow the result.", fset.Position(node.Pos()))
+				return false
+			}
 		}
 		return true
 	})

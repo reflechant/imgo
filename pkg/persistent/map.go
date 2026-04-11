@@ -113,3 +113,28 @@ func (m Map[K, V]) UpdateIn(path []K, fn func(V) V) Map[K, V] {
 
 	return m.Set(path[0], any(subMap.UpdateIn(path[1:], fn)).(V))
 }
+
+// DeleteIn implements "dissoc-in" logic for maps.
+func (m Map[K, V]) DeleteIn(path []K) Map[K, V] {
+	if len(path) == 0 {
+		return m
+	}
+	if len(path) == 1 {
+		return m.Delete(path[0])
+	}
+
+	var subMap Map[K, V]
+	if val, ok := m.Lookup(path[0]); ok {
+		if sm, ok := any(val).(Map[K, V]); ok {
+			subMap = sm
+		} else {
+			// Subpath is not a map, can't descend to delete.
+			return m
+		}
+	} else {
+		// Key doesn't exist.
+		return m
+	}
+
+	return m.Set(path[0], any(subMap.DeleteIn(path[1:])).(V))
+}
