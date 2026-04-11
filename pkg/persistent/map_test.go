@@ -219,5 +219,17 @@ func TestMap(t *testing.T) {
 		if m6.Get("a") != 123 {
 			t.Errorf("DeleteIn on non-map intermediate should not change it")
 		}
+
+		// Single element path
+		m7 := m5.DeleteIn([]string{"a"})
+		if m7.Len() != 0 {
+			t.Errorf("Expected empty map after single element DeleteIn")
+		}
+
+		// Path not found (first key doesn't exist, path len > 1)
+		m8 := m.DeleteIn([]string{"nonexistent", "b"})
+		if m8.Len() != 1 {
+			t.Errorf("Non-existent path (len > 1) DeleteIn should not change map")
+		}
 	})
 }

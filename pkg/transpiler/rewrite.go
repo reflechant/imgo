@@ -12,8 +12,8 @@ func Rewrite(file *ast.File) *ast.File {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			env := []map[string]string{make(map[string]string)}
-			counter := new(int)
-			rewriteBlock(d.Body, env, counter)
+			versions := make(map[string]int)
+			rewriteBlock(d.Body, env, versions)
 			hasPersistent = true
 		case *ast.GenDecl:
 			if d.Tok == token.VAR {
@@ -24,7 +24,7 @@ func Rewrite(file *ast.File) *ast.File {
 							hasPersistent = true
 						}
 						for i, val := range vs.Values {
-							vs.Values[i] = rewriteExpr(val, nil, new(int), false)
+							vs.Values[i] = rewriteExpr(val, nil, make(map[string]int), false)
 							hasPersistent = true
 						}
 					}
@@ -72,53 +72,53 @@ func rewriteType(typ ast.Expr) ast.Expr {
 	}
 	switch t := typ.(type) {
 	case *ast.MapType:
-		return &ast.IndexListExpr{
+		return setPos(&ast.IndexListExpr{
 			X: &ast.SelectorExpr{
 				X:   setPos(ast.NewIdent("persistent"), t.Pos()),
 				Sel: ast.NewIdent("Map"),
 			},
 			Indices: []ast.Expr{rewriteType(t.Key), rewriteType(t.Value)},
 			Lbrack:  t.Pos(),
-		}
+		}, t.Pos())
 	case *ast.ArrayType:
 		if t.Len == nil {
-			return &ast.IndexListExpr{
+			return setPos(&ast.IndexListExpr{
 				X: &ast.SelectorExpr{
 					X:   setPos(ast.NewIdent("persistent"), t.Pos()),
 					Sel: ast.NewIdent("List"),
 				},
 				Indices: []ast.Expr{rewriteType(t.Elt)},
 				Lbrack:  t.Pos(),
-			}
+			}, t.Pos())
 		}
 	}
 	return typ
 }
 
-func rewriteBlock(block *ast.BlockStmt, env []map[string]string, counter *int) {
+func rewriteBlock(block *ast.BlockStmt, env []map[string]string, versions map[string]int) {
 	if block == nil {
 		return
 	}
 
 	for i, stmt := range block.List {
-		block.List[i] = rewriteStmt(stmt, env, counter)
+		block.List[i] = rewriteStmt(stmt, env, versions)
 	}
 }
 
-func rewriteStmt(stmt ast.Stmt, env []map[string]string, counter *int) ast.Stmt {
+func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int) ast.Stmt {
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
 		// Specialized check for 2-value indexing context: v, ok := m[k]
 		if len(s.Lhs) == 2 && len(s.Rhs) == 1 {
 			if _, ok := s.Rhs[0].(*ast.IndexExpr); ok {
-				s.Rhs[0] = rewriteExpr(s.Rhs[0], env, counter, true) // Pass true for wantTwoValues
+				s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true) // Pass true for wantTwoValues
 				goto processLHS
 			}
 		}
 
 		// Default processing
 		for j, expr := range s.Rhs {
-			s.Rhs[j] = rewriteExpr(expr, env, counter, false)
+			s.Rhs[j] = rewriteExpr(expr, env, versions, false)
 		}
 
 	processLHS:
@@ -126,8 +126,9 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, counter *int) ast.Stmt 
 			newNames := make([]ast.Expr, len(s.Lhs))
 			for j, lhs := range s.Lhs {
 				if ident, ok := lhs.(*ast.Ident); ok {
-					*counter++
-					mangled := fmt.Sprintf("%s_%d", ident.Name, *counter)
+					versions[ident.Name]++
+					count := versions[ident.Name]
+					mangled := fmt.Sprintf("%s_%d", ident.Name, count)
 					env[len(env)-1][ident.Name] = mangled
 					newNames[j] = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
 				} else {
@@ -135,77 +136,107 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, counter *int) ast.Stmt 
 				}
 			}
 			s.Lhs = newNames
+		} else {
+			// Even for non-DEFINE, rewrite identifiers on LHS to latest versions
+			for j, lhs := range s.Lhs {
+				s.Lhs[j] = rewriteExpr(lhs, env, versions, false)
+			}
 		}
 		return s
 
 	case *ast.ExprStmt:
-		s.X = rewriteExpr(s.X, env, counter, false)
+		s.X = rewriteExpr(s.X, env, versions, false)
 		return s
 	case *ast.ReturnStmt:
 		for i, expr := range s.Results {
-			s.Results[i] = rewriteExpr(expr, env, counter, false)
+			s.Results[i] = rewriteExpr(expr, env, versions, false)
 		}
 		return s
 	case *ast.BlockStmt:
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		rewriteBlock(s, newEnv, counter)
+		rewriteBlock(s, newEnv, versions)
 		return s
 	case *ast.IfStmt:
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, counter) }
-		s.Cond = rewriteExpr(s.Cond, env, counter, false)
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, versions) }
+		s.Cond = rewriteExpr(s.Cond, env, versions, false)
 		bodyEnv := make([]map[string]string, len(env))
 		copy(bodyEnv, env)
 		bodyEnv = append(bodyEnv, make(map[string]string))
-		rewriteBlock(s.Body, bodyEnv, counter)
+		rewriteBlock(s.Body, bodyEnv, versions)
 		if s.Else != nil {
 			elseEnv := make([]map[string]string, len(env))
 			copy(elseEnv, env)
 			elseEnv = append(elseEnv, make(map[string]string))
 			if els, ok := s.Else.(*ast.BlockStmt); ok {
-				rewriteBlock(els, elseEnv, counter)
+				rewriteBlock(els, elseEnv, versions)
 			} else {
-				s.Else = rewriteStmt(s.Else, env, counter)
+				s.Else = rewriteStmt(s.Else, env, versions)
 			}
 		}
 		return s
 	case *ast.RangeStmt:
-		s.X = rewriteExpr(s.X, env, counter, false)
+		s.X = rewriteExpr(s.X, env, versions, false)
 		bodyEnv := make([]map[string]string, len(env))
 		copy(bodyEnv, env)
 		bodyEnv = append(bodyEnv, make(map[string]string))
-		rewriteBlock(s.Body, bodyEnv, counter)
+		
+		if s.Tok == token.DEFINE {
+			if ident, ok := s.Key.(*ast.Ident); ok {
+				versions[ident.Name]++
+				mangled := fmt.Sprintf("%s_%d", ident.Name, versions[ident.Name])
+				bodyEnv[len(bodyEnv)-1][ident.Name] = mangled
+				s.Key = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
+			}
+			if ident, ok := s.Value.(*ast.Ident); ok {
+				versions[ident.Name]++
+				mangled := fmt.Sprintf("%s_%d", ident.Name, versions[ident.Name])
+				bodyEnv[len(bodyEnv)-1][ident.Name] = mangled
+				s.Value = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
+			}
+		} else {
+			if s.Key != nil { s.Key = rewriteExpr(s.Key, env, versions, false) }
+			if s.Value != nil { s.Value = rewriteExpr(s.Value, env, versions, false) }
+		}
+		
+		rewriteBlock(s.Body, bodyEnv, versions)
 		return s
 	case *ast.SwitchStmt:
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, counter) }
-		if s.Tag != nil { s.Tag = rewriteExpr(s.Tag, env, counter, false) }
-		rewriteBlock(s.Body, env, counter)
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, versions) }
+		if s.Tag != nil { s.Tag = rewriteExpr(s.Tag, env, versions, false) }
+		rewriteBlock(s.Body, env, versions)
+		return s
+	case *ast.TypeSwitchStmt:
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, versions) }
+		s.Assign = rewriteStmt(s.Assign, env, versions)
+		rewriteBlock(s.Body, env, versions)
 		return s
 	case *ast.CaseClause:
 		for i, expr := range s.List {
-			s.List[i] = rewriteExpr(expr, env, counter, false)
+			s.List[i] = rewriteExpr(expr, env, versions, false)
 		}
-		for i, stmt := range s.Body {
-			s.Body[i] = rewriteStmt(stmt, env, counter)
+		for i, st := range s.Body {
+			s.Body[i] = rewriteStmt(st, env, versions)
 		}
 		return s
 	case *ast.DeferStmt:
-		s.Call = rewriteExpr(s.Call, env, counter, false).(*ast.CallExpr)
+		s.Call = rewriteExpr(s.Call, env, versions, false).(*ast.CallExpr)
 		return s
 	case *ast.DeclStmt:
 		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
 			for _, spec := range d.Specs {
 				if vs, ok := spec.(*ast.ValueSpec); ok {
 					for i, name := range vs.Names {
-						*counter++
-						mangled := fmt.Sprintf("%s_%d", name.Name, *counter)
+						versions[name.Name]++
+						count := versions[name.Name]
+						mangled := fmt.Sprintf("%s_%d", name.Name, count)
 						env[len(env)-1][name.Name] = mangled
 						vs.Names[i] = &ast.Ident{Name: mangled, NamePos: name.Pos()}
 					}
 					if vs.Type != nil { vs.Type = rewriteType(vs.Type) }
 					for i, val := range vs.Values {
-						vs.Values[i] = rewriteExpr(val, env, counter, false)
+						vs.Values[i] = rewriteExpr(val, env, versions, false)
 					}
 				}
 			}
@@ -215,7 +246,7 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, counter *int) ast.Stmt 
 	return stmt
 }
 
-func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoValues bool) ast.Expr {
+func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int, wantTwoValues bool) ast.Expr {
 	if expr == nil {
 		return nil
 	}
@@ -231,8 +262,8 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		}
 		return e
 	case *ast.BinaryExpr:
-		e.X = rewriteExpr(e.X, env, counter, false)
-		e.Y = rewriteExpr(e.Y, env, counter, false)
+		e.X = rewriteExpr(e.X, env, versions, false)
+		e.Y = rewriteExpr(e.Y, env, versions, false)
 		return e
 	case *ast.CallExpr:
 		// Specialized handling for builtins
@@ -243,14 +274,14 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 						Sel: ast.NewIdent("Len"),
 					},
-					Args: []ast.Expr{rewriteExpr(e.Args[0], env, counter, false)},
+					Args: []ast.Expr{rewriteExpr(e.Args[0], env, versions, false)},
 				}, e.Pos())
 			}
 		}
 
-		e.Fun = rewriteExpr(e.Fun, env, counter, false)
+		e.Fun = rewriteExpr(e.Fun, env, versions, false)
 		for i, arg := range e.Args {
-			e.Args[i] = rewriteExpr(arg, env, counter, false)
+			e.Args[i] = rewriteExpr(arg, env, versions, false)
 		}
 
 		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
@@ -348,7 +379,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		}
 		return e
 	case *ast.SelectorExpr:
-		e.X = rewriteExpr(e.X, env, counter, false)
+		e.X = rewriteExpr(e.X, env, versions, false)
 		return e
 	case *ast.IndexExpr:
 		method := "Get"
@@ -357,10 +388,10 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		}
 		return setPos(&ast.CallExpr{
 			Fun: &ast.SelectorExpr{
-				X:   rewriteExpr(e.X, env, counter, false),
+				X:   rewriteExpr(e.X, env, versions, false),
 				Sel: ast.NewIdent(method),
 			},
-			Args: []ast.Expr{rewriteExpr(e.Index, env, counter, false)},
+			Args: []ast.Expr{rewriteExpr(e.Index, env, versions, false)},
 		}, e.Pos())
 	case *ast.CompositeLit:
 		if mt, ok := e.Type.(*ast.MapType); ok {
@@ -380,7 +411,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						X:   res,
 						Sel: ast.NewIdent("Set"),
 					},
-					Args: []ast.Expr{rewriteExpr(kv.Key, env, counter, false), rewriteExpr(kv.Value, env, counter, false)},
+					Args: []ast.Expr{rewriteExpr(kv.Key, env, versions, false), rewriteExpr(kv.Value, env, versions, false)},
 				}
 			}
 			return res
@@ -401,7 +432,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 						X:   res,
 						Sel: ast.NewIdent("Append"),
 					},
-					Args: []ast.Expr{rewriteExpr(el, env, counter, false)},
+					Args: []ast.Expr{rewriteExpr(el, env, versions, false)},
 				}
 			}
 			return res
@@ -411,19 +442,19 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, counter *int, wantTwoVa
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		rewriteBlock(e.Body, newEnv, counter)
+		rewriteBlock(e.Body, newEnv, versions)
 		return e
 	case *ast.ParenExpr:
-		e.X = rewriteExpr(e.X, env, counter, false)
+		e.X = rewriteExpr(e.X, env, versions, false)
 		return e
 	case *ast.SliceExpr:
-		e.X = rewriteExpr(e.X, env, counter, false)
-		if e.Low != nil { e.Low = rewriteExpr(e.Low, env, counter, false) }
-		if e.High != nil { e.High = rewriteExpr(e.High, env, counter, false) }
-		if e.Max != nil { e.Max = rewriteExpr(e.Max, env, counter, false) }
+		e.X = rewriteExpr(e.X, env, versions, false)
+		if e.Low != nil { e.Low = rewriteExpr(e.Low, env, versions, false) }
+		if e.High != nil { e.High = rewriteExpr(e.High, env, versions, false) }
+		if e.Max != nil { e.Max = rewriteExpr(e.Max, env, versions, false) }
 		return e
 	case *ast.TypeAssertExpr:
-		e.X = rewriteExpr(e.X, env, counter, false)
+		e.X = rewriteExpr(e.X, env, versions, false)
 		e.Type = rewriteType(e.Type)
 		return e
 	}

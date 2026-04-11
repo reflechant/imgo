@@ -2,6 +2,7 @@ package transpiler
 
 import (
 	"bytes"
+	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -27,7 +28,7 @@ func main() {
 			expected: []string{
 				"x_1 := 5",
 				"fmt.Println(x_1)",
-				"x_3 := 10",
+				"x_2 := 10",
 			},
 		},
 		{
@@ -40,8 +41,8 @@ func main() {
 }`,
 			expected: []string{
 				"m_1 := persistent.NewMap[string, int]().Set(\"a\", 1)",
-				"v_2 := m_1.Get(\"a\")",
-				"v_3, ok_4 := m_1.Lookup(\"b\")",
+				"v_1 := m_1.Get(\"a\")",
+				"v_2, ok_1 := m_1.Lookup(\"b\")",
 			},
 		},
 		{
@@ -55,7 +56,7 @@ func main() {
 			expected: []string{
 				"l_1 := persistent.NewList[int]().Append(1).Append(2)",
 				"l_2 := l_1.Append(3)",
-				"x_3 := l_2.Get(0)",
+				"x_1 := l_2.Get(0)",
 			},
 		},
 		{
@@ -74,7 +75,7 @@ func main() {
 			expected: []string{
 				"if x_1 := 5; x_1 > 0",
 				"x_2 := 10",
-				"else if y_3 := 2; y_3 > 0",
+				"else if y_1 := 2; y_1 > 0",
 			},
 		},
 		{
@@ -85,9 +86,23 @@ func main() {
 	for i, v := range l {
 		fmt.Println(i, v)
 	}
+    var i int
+    for i = range l {
+        _ = i
+    }
+    var v int
+    for i, v = range l {
+        _ = i
+        _ = v
+    }
+    for range l {
+    }
 }`,
 			expected: []string{
-				"for i, v := range l_1",
+				"for i_1, v_1 := range l_1",
+                "for i_2 = range l_1",
+                "for i_2, v_2 = range l_1",
+                "for range l_1",
 			},
 		},
 		{
@@ -164,17 +179,37 @@ func main() {
     s2 := s[1:2:3]
     var a any = s2
     s3 := a.([]int)
+    _ = s[1:]
+    _ = s[:2]
+    _ = s[:]
 }`,
             expected: []string{
                 "x_1 := 5",
                 "defer fmt.Println(x_1)",
-                "switch y_2 := (x_1 + 1); y_2",
+                "switch y_1 := (x_1 + 1); y_1",
                 "case 6:",
-                "fmt.Println(y_2)",
-                "s_3 := persistent.NewList[int]().Append(1).Append(2).Append(3)",
-                "s2_4 := s_3[1:2:3]",
-                "var a_5 any = s2_4",
-                "s3_6 := a_5.(persistent.List[int])",
+                "fmt.Println(y_1)",
+                "s_1 := persistent.NewList[int]().Append(1).Append(2).Append(3)",
+                "s2_1 := s_1[1:2:3]",
+                "var a_1 any = s2_1",
+                "s3_1 := a_1.(persistent.List[int])",
+                "s_1[1:]",
+                "s_1[:2]",
+                "s_1[:]",
+            },
+        },
+        {
+            name: "Type switch with Init",
+            input: `package main
+func main() {
+    var a any
+    switch x := 1; v := a.(type) {
+    case int:
+        fmt.Println(v, x)
+    }
+}`,
+            expected: []string{
+                "switch x_1 := 1; v_1 := a_1.(type)",
             },
         },
         {
@@ -184,10 +219,108 @@ func main() {
     m := map[string]any{"a": 1}
     m := m.Delete("a")
     m := m.DeleteIn("a", "b")
+    m := m.DeleteIn("a")
 }`,
             expected: []string{
                 "m_2 := m_1.Delete(\"a\")",
                 "m_3 := m_2.Set(\"a\", m_2.Get(\"a\").Delete(\"b\"))",
+                "m_4 := m_3.Delete(\"a\")",
+            },
+        },
+        {
+            name: "No persistent needed",
+            input: `package main
+const X = 1
+type Y int
+`,
+            expected: []string{
+                "package main",
+                "const X = 1",
+                "type Y int",
+            },
+        },
+        {
+            name: "Mixed imports",
+            input: `package main
+import "os"
+func main() {
+    m := map[string]int{}
+    fmt.Println(m)
+}`,
+            expected: []string{
+                `import (`,
+                `"os"`,
+                `"github.com/rg/imgo/pkg/persistent"`,
+            },
+		},
+		{
+			name: "Import already exists",
+			input: `package main
+import "github.com/rg/imgo/pkg/persistent"
+func main() {
+	m := map[string]int{}
+    _ = m
+}
+`,
+			expected: []string{
+				`import "github.com/rg/imgo/pkg/persistent"`,
+			},
+		},
+        {
+            name: "Fixed array desugaring",
+            input: `package main
+var a [5]int
+func main() {
+    x := a[0]
+}`,
+            expected: []string{
+                "var a [5]int",
+                "x_1 := a.Get(0)", 
+            },
+        },
+        {
+            name: "Complex type assertion",
+            input: `package main
+func main() {
+    var a any
+    x := a.(map[string]int)
+}`,
+            expected: []string{
+                "x_1 := a_1.(persistent.Map[string, int])",
+            },
+        },
+        {
+            name: "UpdateIn with 1 arg",
+            input: `package main
+func main() {
+    m := map[string]any{}
+    m = m.UpdateIn("a", func(v any) any { return v })
+}`,
+            expected: []string{
+                "m_1.Update(\"a\", func(v any) any { return v })",
+            },
+        },
+        {
+            name: "Special cases for coverage",
+            input: `package main
+var m = map[string]int{}
+func main() {
+    len()
+    len(1, 2)
+    var a, b int
+    _, _ = a, b
+    for { break }
+    type S struct { X int }
+    _ = S{X: 1}
+}
+`,
+            expected: []string{
+                "var m = persistent.NewMap[string, int]()",
+                "len()",
+                "len(1, 2)",
+                "var a_1, b_1 int",
+                "break",
+                "S{X: 1}",
             },
         },
 	}
@@ -217,10 +350,68 @@ func main() {
 
 func TestRewriteEdgeCases(t *testing.T) {
     // Test rewriteBlock(nil)
-    rewriteBlock(nil, nil, nil)
+    rewriteBlock(nil, nil, make(map[string]int))
     
     // Test rewriteExpr(nil)
-    if rewriteExpr(nil, nil, nil, false) != nil {
+    if rewriteExpr(nil, nil, make(map[string]int), false) != nil {
         t.Errorf("Expected nil for rewriteExpr(nil)")
     }
+
+    // Test setPos with token.NoPos
+    ident := ast.NewIdent("x")
+    if setPos(ident, token.NoPos) != ident {
+        t.Errorf("Expected unchanged ident for NoPos")
+    }
+
+    // Test setPos Ident
+    setPos(ast.NewIdent("x"), token.Pos(1))
+
+    // Test setPos CallExpr
+    setPos(&ast.CallExpr{}, token.Pos(1))
+
+    // Test setPos SelectorExpr with non-settable X
+    sel := &ast.SelectorExpr{
+        X: &ast.BasicLit{Kind: token.INT, Value: "1"},
+        Sel: ast.NewIdent("Foo"),
+    }
+    setPos(sel, token.Pos(1))
+
+    // Test setPos IndexListExpr
+    setPos(&ast.IndexListExpr{}, token.Pos(1))
+
+    // Test addPersistentImport with no existing imports GenDecl
+    f := &ast.File{
+        Decls: []ast.Decl{
+            &ast.FuncDecl{
+                Name: ast.NewIdent("main"),
+                Body: &ast.BlockStmt{},
+            },
+        },
+    }
+    addPersistentImport(f)
+
+    // Test rewriteType(nil)
+    if rewriteType(nil) != nil {
+        t.Errorf("Expected nil for rewriteType(nil)")
+    }
+
+    // Test LHS not Ident in DEFINE
+    stmt := &ast.AssignStmt{
+        Lhs: []ast.Expr{&ast.BinaryExpr{}},
+        Tok: token.DEFINE,
+        Rhs: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "1"}},
+    }
+    rewriteStmt(stmt, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test SwitchStmt with Init
+    sw := &ast.SwitchStmt{
+        Init: &ast.AssignStmt{
+            Lhs: []ast.Expr{ast.NewIdent("x")},
+            Tok: token.DEFINE,
+            Rhs: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "1"}},
+        },
+        Tag: ast.NewIdent("x"),
+        Body: &ast.BlockStmt{},
+    }
+    rewriteStmt(sw, []map[string]string{make(map[string]string)}, make(map[string]int))
 }
