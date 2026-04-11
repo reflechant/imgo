@@ -7,8 +7,8 @@ import (
 // This snippet demonstrates the only (so far) feature of ImGo that is
 // introduced not out of necessity to make it immutable but for convenience.
 // That is: easy operations on nested maps where you can add a (K,V) pair or
-// "update" it (Clojure-way, returning a new data structure) without tedious
-// checking if the map is nil at every level
+// "update" or "delete" it (Clojure-way, returning a new data structure) without
+// tedious checking if the map is nil at every level
 
 func main() {
 	// 1. Deep Read on Nil
