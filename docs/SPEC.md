@@ -56,8 +56,8 @@ Deriving new data from existing data using the same identifier is permitted thro
 
 ### 4.2 Collection Operations
 - **Single-value Access:** `v := m[k]` or `v := l[i]` desugars to a `Get` call.
-- **Context-aware Access:** `v, ok := m[k]` or `v, ok := l[i]` desugars to a `Lookup` call.
-- **Deep Access:** Chained indexing (e.g., `m["a"]["b"]`) is safe and handles missing intermediate maps by returning zero-values.
+- **Context-aware Access:** `v, ok := m[k]` desugars to a `Lookup` call. Note: This is only supported for maps, matching standard Go behavior.
+- **Deep Access:** Chained indexing (e.g., `m["a"]["b"]`) is safe for maps (handles missing intermediate maps by returning zero-values) but panics for lists if the index is out of bounds, matching Go's behavior.
 - **Deep Updates:** The methods `.SetIn(path..., value)`, `.UpdateIn(path..., fn)`, and `.DeleteIn(path...)` provide recursive updates for nested maps.
 
 ## 5. Control Flow
@@ -72,9 +72,12 @@ The `make` function in ImGo is purely for initializing empty collections.
 - **Lists**: `make([]T, len, cap)` ignores the `len` and `cap` arguments. Unlike standard Go, **it returns an empty list (length 0)**, not a list pre-filled with zero-values.
 
 ### 6.2 Indexing Behavior
-Standard Go indexing (`s[i]`) panics if the index is out of bounds. ImGo indexing is **safe by default**:
-- **`v := s[i]`**: If `i` is out of bounds or the collection is `nil`, it returns the **zero value** of the element type instead of panicking.
-- **`v, ok := s[i]`**: The `ok` value will be `false` for out-of-bounds or `nil` access.
+ImGo follows Go's indexing behavior for lists:
+- **`v := l[i]`**: If `i` is out of bounds or the collection is `nil`, it **panics** with a runtime error, matching standard Go.
+
+For maps, ImGo maintains Go's safe indexing:
+- **`v := m[k]`**: Returns the zero value if the key is missing.
+- **`v, ok := m[k]`**: Returns `(zero, false)` if the key is missing.
 
 ### 6.3 Physical Immutability
 Every operation that "changes" a collection returns a brand-new header structure. While structural sharing makes this efficient, it means that no two parts of your program can ever share a "mutable" view of the same data.

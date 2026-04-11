@@ -74,27 +74,6 @@ func TestList(t *testing.T) {
 		l.Set(0, 1)
 	})
 
-	t.Run("Lookup", func(t *testing.T) {
-		l := NewList[int]().Append(10)
-		v, ok := l.Lookup(0)
-		if !ok || v != 10 {
-			t.Errorf("Expected 10, true; got %v, %v", v, ok)
-		}
-		v, ok = l.Lookup(1)
-		if ok || v != 0 {
-			t.Errorf("Expected 0, false for out of bounds; got %v, %v", v, ok)
-		}
-		v, ok = l.Lookup(-1)
-		if ok || v != 0 {
-			t.Errorf("Expected 0, false for negative index; got %v, %v", v, ok)
-		}
-		var nl List[int]
-		v, ok = nl.Lookup(0)
-		if ok || v != 0 {
-			t.Errorf("Expected 0, false for nil list; got %v, %v", v, ok)
-		}
-	})
-
 	t.Run("AllList iterator", func(t *testing.T) {
 		l := NewList[int]().Append(1).Append(2).Append(3)
 		var sum int

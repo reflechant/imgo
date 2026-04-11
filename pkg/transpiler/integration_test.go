@@ -25,7 +25,8 @@ func main() {
     
     fmt.Printf("len(m)=%d ", len(m))
     fmt.Printf("l[2]=%d", l[2])
-}`
+}
+`
 
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "test.im", code, 0)

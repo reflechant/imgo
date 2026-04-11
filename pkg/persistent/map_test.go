@@ -232,4 +232,32 @@ func TestMap(t *testing.T) {
 			t.Errorf("Non-existent path (len > 1) DeleteIn should not change map")
 		}
 	})
+
+	t.Run("Deep access with list inside map", func(t *testing.T) {
+		l := NewList[int]().Append(10).Append(20)
+		m := NewMap[string, any]().Set("a", l)
+		
+		// This should work (m["a"].Get(0))
+		val := m.Get("a")
+		l2 := val.(List[int])
+		if l2.Get(0) != 10 {
+			t.Errorf("Expected 10, got %v", l2.Get(0))
+		}
+		
+		// Test missing map key returning empty list
+		m2 := NewMap[string, List[int]]()
+		l3 := m2.Get("nonexistent")
+		if l3.Len() != 0 {
+			t.Errorf("Expected empty list for missing key")
+		}
+		
+		// If the user does m2["nonexistent"][0], it will be m2.Get("nonexistent").Get(0)
+		// which should panic because Get(0) on empty list panics now.
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("Expected panic when accessing index 0 of empty list from missing map key")
+			}
+		}()
+		_ = l3.Get(0)
+	})
 }

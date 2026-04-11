@@ -1,6 +1,7 @@
 package persistent
 
 import (
+	"fmt"
 	"github.com/benbjohnson/immutable"
 	"iter"
 )
@@ -28,23 +29,15 @@ func (l List[T]) Append(v T) List[T] {
 }
 
 func (l List[T]) Get(i int) T {
-	if l.inner == nil {
-		panic("index out of bounds (nil list)")
+	if i < 0 || i >= l.Len() {
+		panic(fmt.Sprintf("runtime error: index out of range [%d] with length %d", i, l.Len()))
 	}
 	return l.inner.Get(i)
 }
 
-func (l List[T]) Lookup(i int) (T, bool) {
-	if l.inner == nil || i < 0 || i >= l.Len() {
-		var zero T
-		return zero, false
-	}
-	return l.Get(i), true
-}
-
 func (l List[T]) Set(i int, v T) List[T] {
-	if l.inner == nil {
-		panic("index out of bounds (nil list)")
+	if i < 0 || i >= l.Len() {
+		panic(fmt.Sprintf("runtime error: index out of range [%d] with length %d", i, l.Len()))
 	}
 	return List[T]{inner: l.inner.Set(i, v)}
 }
