@@ -1,6 +1,6 @@
-# 🚀 ImGo
+# 🚀 ImGo (Immutable Go)
 
-**ImGo** is Go with Clojure-like immutability. While it allows non-pure IO and other side effects (much like Clojure), its core is functional in its approach to data. The main idea is to stay as close to Go as possible while providing the safety and reasoning guarantees that deep immutability provides.
+**ImGo** is a dialect of Go with Clojure-like immutability. While it allows non-pure IO and other side effects (much like Clojure), its core is functional in its approach to data. The main idea is to stay as close to Go as possible while providing the safety and reasoning guarantees that deep immutability provides.
 
 ImGo isn't just about prohibiting mutation; it's about shifting your mental model from "updating state in-place" (place-oriented programming or PLOP as Rich Hickey calls it) to "passing data through a chain of transformations" This results in code that is simpler to reason about, trivial to parallelize, and fundamentally more error-proof.
 
