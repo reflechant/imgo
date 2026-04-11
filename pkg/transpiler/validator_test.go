@@ -184,6 +184,60 @@ func main() {
 }`,
 			wantErr: "'delete' builtin is prohibited",
 		},
+		{
+			name: "Prohibited append builtin",
+			code: `package main
+func main() {
+    s := []int{1}
+    s2 := append(s, 2)
+}`,
+			wantErr: "builtin 'append' is prohibited",
+		},
+		{
+			name: "Prohibited cap builtin",
+			code: `package main
+func main() {
+    s := []int{1}
+    c := cap(s)
+}`,
+			wantErr: "builtin 'cap' is prohibited",
+		},
+		{
+			name: "Prohibited new builtin",
+			code: `package main
+func main() {
+    x := new(int)
+}`,
+			wantErr: "builtin 'new' is prohibited",
+		},
+		{
+			name: "Prohibited clear builtin",
+			code: `package main
+func main() {
+    m := map[string]int{"a": 1}
+    clear(m)
+}`,
+			wantErr: "builtin 'clear' is prohibited",
+		},
+		{
+			name: "Prohibited close builtin",
+			code: `package main
+func main() {
+    c := make(chan int)
+    close(c)
+}`,
+			wantErr: "builtin 'close' is prohibited",
+		},
+		{
+			name: "Prohibited copy builtin",
+			code: `package main
+func main() {
+    s1 := []int{1}
+    s2 := []int{2}
+    copy(s1, s2)
+}`,
+			wantErr: "builtin 'copy' is prohibited",
+		},
 	}
 
 	for _, tt := range tests {

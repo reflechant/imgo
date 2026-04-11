@@ -76,7 +76,9 @@ This ensures that closures are always "pure" and free from data races caused by 
 ## 3. Global Keywords and Semantics
 ImGo leverages Go's built-in functions with modified functional semantics:
 - **`len(c)`**: Desugars to `persistent.Len(c)`.
+- **`make(T, ...)`**: Supported as sugar for `NewMap` or `NewList`. Capacity hints are currently ignored as persistent collections grow tree-nodes instead of contiguous buffers.
 - **`delete(m, k)`**: **PROHIBITED**. Use `m.Delete(k)` instead.
-- **`make()`**: Not supported for collections. Use literals or `NewMap`/`NewList`.
+- **`append(s, ...)`**: **PROHIBITED**. Use `s.Append(v)` instead.
+- **`cap(c)`, `clear(c)`, `copy(dst, src)`, `new(T)`**: **PROHIBITED**.
 - **Pointers**: `*T`, `*p`, and `&x` are **PROHIBITED**.
-- **Assignment**: `=` is **PROHIBITED**. Use `:=` for all local bindings.
+- **Assignment**: `=` is **PROHIBITED**. Use `:=` for shadowing.

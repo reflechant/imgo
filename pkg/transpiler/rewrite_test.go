@@ -323,6 +323,18 @@ func main() {
                 "S{X: 1}",
             },
         },
+        {
+            name: "Make builtin desugaring",
+            input: `package main
+func main() {
+    m := make(map[string]int)
+    l := make([]int, 10)
+}`,
+            expected: []string{
+                "m_1 := persistent.NewMap[string, int]()",
+                "l_1 := persistent.NewList[int]()",
+            },
+        },
 	}
 
 	for _, tt := range tests {

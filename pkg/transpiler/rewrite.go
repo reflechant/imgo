@@ -277,6 +277,32 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 					Args: []ast.Expr{rewriteExpr(e.Args[0], env, versions, false)},
 				}, e.Pos())
 			}
+			if ident.Name == "make" && len(e.Args) >= 1 {
+				switch typ := e.Args[0].(type) {
+				case *ast.MapType:
+					return setPos(&ast.CallExpr{
+						Fun: &ast.IndexListExpr{
+							X: &ast.SelectorExpr{
+								X:   setPos(ast.NewIdent("persistent"), e.Pos()),
+								Sel: ast.NewIdent("NewMap"),
+							},
+							Indices: []ast.Expr{rewriteType(typ.Key), rewriteType(typ.Value)},
+						},
+					}, e.Pos())
+				case *ast.ArrayType:
+					if typ.Len == nil {
+						return setPos(&ast.CallExpr{
+							Fun: &ast.IndexListExpr{
+								X: &ast.SelectorExpr{
+									X:   setPos(ast.NewIdent("persistent"), e.Pos()),
+									Sel: ast.NewIdent("NewList"),
+								},
+								Indices: []ast.Expr{rewriteType(typ.Elt)},
+							},
+						}, e.Pos())
+					}
+				}
+			}
 		}
 
 		e.Fun = rewriteExpr(e.Fun, env, versions, false)
