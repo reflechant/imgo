@@ -159,22 +159,31 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 		rewriteBlock(s, newEnv, versions)
 		return s
 	case *ast.IfStmt:
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, versions) }
-		s.Cond = rewriteExpr(s.Cond, env, versions, false)
-		bodyEnv := make([]map[string]string, len(env))
-		copy(bodyEnv, env)
-		bodyEnv = append(bodyEnv, make(map[string]string))
-		rewriteBlock(s.Body, bodyEnv, versions)
+		newEnv := make([]map[string]string, len(env))
+		copy(newEnv, env)
+		newEnv = append(newEnv, make(map[string]string))
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
+		s.Cond = rewriteExpr(s.Cond, newEnv, versions, false)
+		rewriteBlock(s.Body, newEnv, versions)
 		if s.Else != nil {
-			elseEnv := make([]map[string]string, len(env))
-			copy(elseEnv, env)
-			elseEnv = append(elseEnv, make(map[string]string))
 			if els, ok := s.Else.(*ast.BlockStmt); ok {
+				elseEnv := make([]map[string]string, len(newEnv))
+				copy(elseEnv, newEnv)
+				elseEnv = append(elseEnv, make(map[string]string))
 				rewriteBlock(els, elseEnv, versions)
 			} else {
-				s.Else = rewriteStmt(s.Else, env, versions)
+				s.Else = rewriteStmt(s.Else, newEnv, versions)
 			}
 		}
+		return s
+	case *ast.ForStmt:
+		newEnv := make([]map[string]string, len(env))
+		copy(newEnv, env)
+		newEnv = append(newEnv, make(map[string]string))
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
+		if s.Cond != nil { s.Cond = rewriteExpr(s.Cond, newEnv, versions, false) }
+		if s.Post != nil { s.Post = rewriteStmt(s.Post, newEnv, versions) }
+		rewriteBlock(s.Body, newEnv, versions)
 		return s
 	case *ast.RangeStmt:
 		s.X = rewriteExpr(s.X, env, versions, false)
@@ -203,14 +212,20 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 		rewriteBlock(s.Body, bodyEnv, versions)
 		return s
 	case *ast.SwitchStmt:
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, versions) }
-		if s.Tag != nil { s.Tag = rewriteExpr(s.Tag, env, versions, false) }
-		rewriteBlock(s.Body, env, versions)
+		newEnv := make([]map[string]string, len(env))
+		copy(newEnv, env)
+		newEnv = append(newEnv, make(map[string]string))
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
+		if s.Tag != nil { s.Tag = rewriteExpr(s.Tag, newEnv, versions, false) }
+		rewriteBlock(s.Body, newEnv, versions)
 		return s
 	case *ast.TypeSwitchStmt:
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, env, versions) }
-		s.Assign = rewriteStmt(s.Assign, env, versions)
-		rewriteBlock(s.Body, env, versions)
+		newEnv := make([]map[string]string, len(env))
+		copy(newEnv, env)
+		newEnv = append(newEnv, make(map[string]string))
+		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
+		s.Assign = rewriteStmt(s.Assign, newEnv, versions)
+		rewriteBlock(s.Body, newEnv, versions)
 		return s
 	case *ast.CaseClause:
 		for i, expr := range s.List {
@@ -264,6 +279,12 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 	case *ast.BinaryExpr:
 		e.X = rewriteExpr(e.X, env, versions, false)
 		e.Y = rewriteExpr(e.Y, env, versions, false)
+		return e
+	case *ast.UnaryExpr:
+		e.X = rewriteExpr(e.X, env, versions, false)
+		return e
+	case *ast.StarExpr:
+		e.X = rewriteExpr(e.X, env, versions, false)
 		return e
 	case *ast.CallExpr:
 		// Specialized handling for builtins
@@ -462,6 +483,14 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 				}
 			}
 			return res
+		}
+		// General case (e.g. Structs)
+		for i, el := range e.Elts {
+			if kv, ok := el.(*ast.KeyValueExpr); ok {
+				kv.Value = rewriteExpr(kv.Value, env, versions, false)
+			} else {
+				e.Elts[i] = rewriteExpr(el, env, versions, false)
+			}
 		}
 		return e
 	case *ast.FuncLit:

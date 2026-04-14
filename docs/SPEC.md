@@ -10,18 +10,21 @@ ImGo enforces a "Functional Core" through strict prohibitions on features that i
 
 ### 2.1 Prohibited Operators
 The following operators are prohibited:
-- **Assignment:** `=`
+- **Assignment:** `=` (Except in package-level declarations)
 - **Compound Assignment:** `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `&^=`
 - **Increment/Decrement:** `++`, `--`
 
 ### 2.2 Pointers and References
-To ensure physical immutability, all pointer-related operations are forbidden:
-- **Pointer Types:** `*T`
-- **Pointer Dereference:** `*p`
-- **Address-of Operator:** `&x`
+Pointers are permitted in ImGo to enable memory-efficient structural sharing and to facilitate future Go interop. However, immutability is strictly maintained because the language provides no mechanism to mutate the underlying memory of a pointer.
+
+- **Pointer Types:** `*T` is permitted in type declarations and function signatures.
+- **Pointer Dereference:** `*p` is permitted for read access.
+- **Address-of Operator:** `&x` is permitted to create a pointer to a value.
+
+**Note on Interop:** While ImGo code is safe from mutation, passing an ImGo pointer to a standard Go library is currently **unsafe**. Go libraries may mutate the memory in-place, which violates ImGo's epochal time model. Native interop boundaries and safety guarantees are planned for future versions.
 
 ### 2.3 Prohibited Builtin Functions
-The following Go builtin functions are prohibited because they imply in-place mutation or handle pointers:
+The following Go builtin functions are prohibited because they imply in-place mutation or handle pointers in an unsafe manner for ImGo's core:
 - **`append(s, ...)`**: Prohibited. Use `s.Append(v)` on persistent lists instead.
 - **`cap(c)`**: Prohibited. Persistent collections do not have a separate capacity concept; use `len(c)`.
 - **`clear(c)`**: Prohibited. Performs in-place mutation of maps and slices.
@@ -74,6 +77,8 @@ The `make` function in ImGo is purely for initializing empty collections.
 ### 6.2 Indexing Behavior
 ImGo follows Go's indexing behavior for lists:
 - **`v := l[i]`**: If `i` is out of bounds or the collection is `nil`, it **panics** with a runtime error, matching standard Go.
+
+Standard Go does not support `v, ok := l[i]` for slices, and neither does ImGo.
 
 For maps, ImGo maintains Go's safe indexing:
 - **`v := m[k]`**: Returns the zero value if the key is missing.

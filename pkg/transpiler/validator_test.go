@@ -139,41 +139,70 @@ func main() {
 			wantErr: "mutation (++, --) is prohibited",
 		},
 		{
-			name: "Invalid pointer type in signature",
+			name: "Valid pointer type in signature",
 			code: `package main
 func MyFunc(p *int) {}`,
-			wantErr: "pointers are prohibited",
-		},
-		{
-			name: "Valid package var with init",
-			code: `package main
-		var MyVal = 10`,
 			wantErr: "",
 		},
 		{
-			name: "Valid package var without init (Zero-value)",
-			code: `package main
-		var MyVal int`,
-			wantErr: "",
-		},
-
-		{
-			name: "Invalid local var declaration",
-			code: `package main
-		func main() {
-		var x = 5
-		}`,
-			wantErr: "'var' is prohibited inside blocks",
-		},
-		{
-			name: "Invalid address-of (&)",
-
+			name: "Valid address-of (&)",
 			code: `package main
 func main() {
 	x := 5
 	p := &x
 }`,
-			wantErr: "address-of (&) is prohibited",
+			wantErr: "",
+		},
+		{
+			name: "Valid dereference",
+			code: `package main
+func main() {
+	x := 5
+	p := &x
+	y := *p
+	println(y)
+}`,
+			wantErr: "",
+		},
+		{
+			name: "Invalid pointer mutation",
+			code: `package main
+func main() {
+	x := 5
+	p := &x
+	*p = 10
+}`,
+			wantErr: "mutation operator = is prohibited",
+		},
+		{
+			name: "Invalid field mutation",
+			code: `package main
+type S struct { F int }
+func main() {
+	s := &S{F: 1}
+	s.F = 2
+}`,
+			wantErr: "mutation operator = is prohibited",
+		},
+		{
+			name: "Valid package var with init",
+			code: `package main
+var MyVal = 10`,
+			wantErr: "",
+		},
+		{
+			name: "Valid package var without init (Zero-value)",
+			code: `package main
+var MyVal int`,
+			wantErr: "",
+		},
+		{
+			name: "Invalid local var declaration",
+			code: `package main
+func main() {
+	var x = 5
+}`,
+			wantErr: "'var' is prohibited inside blocks",
 		},
 		{
 			name: "Prohibited delete builtin",
@@ -238,6 +267,18 @@ func main() {
 }`,
 			wantErr: "builtin 'copy' is prohibited",
 		},
+        {
+            name: "Prohibited RangeStmt mutation =",
+            code: `package main
+func main() {
+    l := []int{1, 2}
+    var i int
+    for i = range l {
+        _ = i
+    }
+}`,
+            wantErr: "mutation operator = is prohibited",
+        },
 	}
 
 	for _, tt := range tests {

@@ -36,16 +36,6 @@ func Validate(fset *token.FileSet, file *ast.File) error {
 			// Reject x++ and x--
 			walkErr = fmt.Errorf("mutation (++, --) is prohibited in ImGo at %v.", fset.Position(node.Pos()))
 			return false
-		case *ast.StarExpr:
-			// Reject pointer types (*T) and dereferences (*p)
-			walkErr = fmt.Errorf("pointers are prohibited in ImGo at %v.", fset.Position(node.Pos()))
-			return false
-		case *ast.UnaryExpr:
-			// Reject address-of (&x)
-			if node.Op == token.AND {
-				walkErr = fmt.Errorf("address-of (&) is prohibited in ImGo at %v.", fset.Position(node.Pos()))
-				return false
-			}
 		case *ast.CallExpr:
 			// Prohibit builtins that imply in-place mutation or return pointers.
 			if ident, ok := node.Fun.(*ast.Ident); ok {

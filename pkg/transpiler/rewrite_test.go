@@ -335,6 +335,124 @@ func main() {
                 "l_1 := persistent.NewList[int]()",
             },
         },
+
+        // === BUG: UnaryExpr not rewritten ===
+        // rewriteExpr has no case for *ast.UnaryExpr, so identifiers inside
+        // unary expressions (-x, !b, &x) are never mangled.
+        {
+            name: "BUG: UnaryExpr operands must be rewritten",
+            input: `package main
+func main() {
+    x := 5
+    y := -x
+    b := true
+    c := !b
+    p := &x
+}`,
+            expected: []string{
+                "y_1 := -x_1",
+                "c_1 := !b_1",
+                "p_1 := &x_1",
+            },
+        },
+
+        // === BUG: StarExpr (pointer dereference) not rewritten ===
+        // rewriteExpr has no case for *ast.StarExpr, so *p doesn't rewrite p.
+        {
+            name: "BUG: StarExpr operand must be rewritten",
+            input: `package main
+func main() {
+    x := 5
+    p := &x
+    y := *p
+}`,
+            expected: []string{
+                "y_1 := *p_1",
+            },
+        },
+
+        // === BUG: ForStmt (classic for loop) completely unhandled ===
+        // rewriteStmt has no case for *ast.ForStmt, so the condition,
+        // body, and all nested expressions are left unrewritten.
+        {
+            name: "BUG: ForStmt condition must be rewritten",
+            input: `package main
+func main() {
+    x := true
+    for x {
+        break
+    }
+}`,
+            expected: []string{
+                "for x_1",
+            },
+        },
+        {
+            name: "BUG: ForStmt body must be rewritten",
+            input: `package main
+func main() {
+    for {
+        x := 5
+        fmt.Println(x)
+        break
+    }
+}`,
+            expected: []string{
+                "x_1 := 5",
+                "fmt.Println(x_1)",
+            },
+        },
+
+        // === BUG: Struct CompositeLit values not rewritten ===
+        // rewriteExpr's CompositeLit handler only processes MapType and
+        // ArrayType. Struct literals fall through with element values
+        // unrewritten.
+        {
+            name: "BUG: Struct literal values must be rewritten",
+            input: `package main
+type S struct { X int }
+func main() {
+    x := 5
+    s := S{X: x}
+}`,
+            expected: []string{
+                "s_1 := S{X: x_1}",
+            },
+        },
+
+        // === BUG: IfStmt init scope leaks into parent scope ===
+        // The init statement is processed in the parent env, so a := in
+        // the init permanently overwrites the outer binding. After the if,
+        // the original outer variable is no longer resolvable.
+        {
+            name: "BUG: IfStmt init must not leak into parent scope",
+            input: `package main
+func main() {
+    x := 1
+    if x := 2; x > 0 {
+    }
+    fmt.Println(x)
+}`,
+            expected: []string{
+                "fmt.Println(x_1)",
+            },
+        },
+
+        // === BUG: SwitchStmt init scope leaks into parent scope ===
+        // Same issue as IfStmt: the init is processed in the parent env.
+        {
+            name: "BUG: SwitchStmt init must not leak into parent scope",
+            input: `package main
+func main() {
+    x := 1
+    switch x := 2; {
+    }
+    fmt.Println(x)
+}`,
+            expected: []string{
+                "fmt.Println(x_1)",
+            },
+        },
 	}
 
 	for _, tt := range tests {
@@ -426,4 +544,81 @@ func TestRewriteEdgeCases(t *testing.T) {
         Body: &ast.BlockStmt{},
     }
     rewriteStmt(sw, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test IfStmt with Else as non-block (else if)
+    ifStmt := &ast.IfStmt{
+        Cond: &ast.Ident{Name: "true"},
+        Body: &ast.BlockStmt{},
+        Else: &ast.IfStmt{
+            Cond: &ast.Ident{Name: "false"},
+            Body: &ast.BlockStmt{},
+        },
+    }
+    rewriteStmt(ifStmt, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test RangeStmt with nil Key/Value
+    rangeStmt := &ast.RangeStmt{
+        X:    &ast.Ident{Name: "l"},
+        Body: &ast.BlockStmt{},
+    }
+    rewriteStmt(rangeStmt, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test TypeSwitchStmt with Init
+    tsStmt := &ast.TypeSwitchStmt{
+        Init: &ast.AssignStmt{
+            Lhs: []ast.Expr{ast.NewIdent("x")},
+            Tok: token.DEFINE,
+            Rhs: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "1"}},
+        },
+        Assign: &ast.ExprStmt{X: &ast.TypeAssertExpr{X: ast.NewIdent("a"), Type: nil}},
+        Body:   &ast.BlockStmt{},
+    }
+    rewriteStmt(tsStmt, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test IndexExpr with nil Index
+    idxExpr := &ast.IndexExpr{
+        X:     ast.NewIdent("a"),
+        Index: nil,
+    }
+    rewriteExpr(idxExpr, []map[string]string{make(map[string]string)}, make(map[string]int), false)
+
+    // Test CompositeLit with non-KeyValueExpr elements
+    compLit := &ast.CompositeLit{
+        Type: ast.NewIdent("S"),
+        Elts: []ast.Expr{ast.NewIdent("x")},
+    }
+    rewriteExpr(compLit, []map[string]string{{"x": "x_1"}}, make(map[string]int), false)
+
+    // Test ForStmt with nil Init, Cond, Post (for { ... })
+    forNilStmt := &ast.ForStmt{
+        Body: &ast.BlockStmt{},
+    }
+    rewriteStmt(forNilStmt, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test ForStmt with non-nil Init, Cond, Post
+    forFullStmt := &ast.ForStmt{
+        Init: &ast.AssignStmt{
+            Lhs: []ast.Expr{ast.NewIdent("i")},
+            Tok: token.DEFINE,
+            Rhs: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "0"}},
+        },
+        Cond: &ast.BinaryExpr{
+            X:  ast.NewIdent("i"),
+            Op: token.LSS,
+            Y:  &ast.BasicLit{Kind: token.INT, Value: "10"},
+        },
+        Post: &ast.ExprStmt{X: ast.NewIdent("i")},
+        Body: &ast.BlockStmt{},
+    }
+    rewriteStmt(forFullStmt, []map[string]string{make(map[string]string)}, make(map[string]int))
+
+    // Test RangeStmt with non-Ident Key/Value
+    rangeNonIdentStmt := &ast.RangeStmt{
+        X:     &ast.Ident{Name: "l"},
+        Key:   &ast.BasicLit{Kind: token.INT, Value: "0"},
+        Value: &ast.BasicLit{Kind: token.INT, Value: "0"},
+        Tok:   token.DEFINE,
+        Body:  &ast.BlockStmt{},
+    }
+    rewriteStmt(rangeNonIdentStmt, []map[string]string{make(map[string]string)}, make(map[string]int))
 }
