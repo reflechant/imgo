@@ -2,8 +2,9 @@ package persistent
 
 import (
 	"fmt"
-	"github.com/benbjohnson/immutable"
 	"iter"
+
+	"github.com/benbjohnson/immutable"
 )
 
 type List[T any] struct {
@@ -42,7 +43,22 @@ func (l List[T]) Set(i int, v T) List[T] {
 	return List[T]{inner: l.inner.Set(i, v)}
 }
 
-func (l List[T]) All() iter.Seq[T] {
+func (l List[T]) All() iter.Seq2[int, T] {
+	return func(yield func(int, T) bool) {
+		if l.inner == nil {
+			return
+		}
+		it := l.inner.Iterator()
+		for !it.Done() {
+			i, v := it.Next()
+			if !yield(i, v) {
+				return
+			}
+		}
+	}
+}
+
+func (l List[T]) Values() iter.Seq[T] {
 	return func(yield func(T) bool) {
 		if l.inner == nil {
 			return

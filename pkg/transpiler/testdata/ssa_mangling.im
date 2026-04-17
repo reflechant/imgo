@@ -1,0 +1,15 @@
+package main
+
+import "fmt"
+
+func main() {
+	x := 10
+	f := func() { fmt.Printf("Captured x: %d\n", x) }
+	x := 20
+	f()
+	fmt.Printf("Shadowed x: %d\n", x)
+}
+
+// -- EXPECT --
+// Captured x: 10
+// Shadowed x: 20

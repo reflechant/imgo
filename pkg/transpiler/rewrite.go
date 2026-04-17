@@ -11,21 +11,30 @@ func Rewrite(file *ast.File) *ast.File {
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
+			if d.Type != nil {
+				if d.Type.Params != nil {
+					for _, field := range d.Type.Params.List {
+						field.Type = rewriteType(field.Type, &hasPersistent)
+					}
+				}
+				if d.Type.Results != nil {
+					for _, field := range d.Type.Results.List {
+						field.Type = rewriteType(field.Type, &hasPersistent)
+					}
+				}
+			}
 			env := []map[string]string{make(map[string]string)}
 			versions := make(map[string]int)
-			rewriteBlock(d.Body, env, versions)
-			hasPersistent = true
+			rewriteBlock(d.Body, env, versions, &hasPersistent)
 		case *ast.GenDecl:
 			if d.Tok == token.VAR {
 				for _, spec := range d.Specs {
 					if vs, ok := spec.(*ast.ValueSpec); ok {
 						if vs.Type != nil {
-							vs.Type = rewriteType(vs.Type)
-							hasPersistent = true
+							vs.Type = rewriteType(vs.Type, &hasPersistent)
 						}
 						for i, val := range vs.Values {
-							vs.Values[i] = rewriteExpr(val, nil, make(map[string]int), false)
-							hasPersistent = true
+							vs.Values[i] = rewriteExpr(val, nil, make(map[string]int), false, &hasPersistent)
 						}
 					}
 				}
@@ -66,28 +75,30 @@ func addPersistentImport(file *ast.File) {
 	file.Decls = append([]ast.Decl{newDecl}, file.Decls...)
 }
 
-func rewriteType(typ ast.Expr) ast.Expr {
+func rewriteType(typ ast.Expr, hasPersistent *bool) ast.Expr {
 	if typ == nil {
 		return nil
 	}
 	switch t := typ.(type) {
 	case *ast.MapType:
+		*hasPersistent = true
 		return setPos(&ast.IndexListExpr{
 			X: &ast.SelectorExpr{
 				X:   setPos(ast.NewIdent("persistent"), t.Pos()),
 				Sel: ast.NewIdent("Map"),
 			},
-			Indices: []ast.Expr{rewriteType(t.Key), rewriteType(t.Value)},
+			Indices: []ast.Expr{rewriteType(t.Key, hasPersistent), rewriteType(t.Value, hasPersistent)},
 			Lbrack:  t.Pos(),
 		}, t.Pos())
 	case *ast.ArrayType:
 		if t.Len == nil {
+			*hasPersistent = true
 			return setPos(&ast.IndexListExpr{
 				X: &ast.SelectorExpr{
 					X:   setPos(ast.NewIdent("persistent"), t.Pos()),
 					Sel: ast.NewIdent("List"),
 				},
-				Indices: []ast.Expr{rewriteType(t.Elt)},
+				Indices: []ast.Expr{rewriteType(t.Elt, hasPersistent)},
 				Lbrack:  t.Pos(),
 			}, t.Pos())
 		}
@@ -95,30 +106,30 @@ func rewriteType(typ ast.Expr) ast.Expr {
 	return typ
 }
 
-func rewriteBlock(block *ast.BlockStmt, env []map[string]string, versions map[string]int) {
+func rewriteBlock(block *ast.BlockStmt, env []map[string]string, versions map[string]int, hasPersistent *bool) {
 	if block == nil {
 		return
 	}
 
 	for i, stmt := range block.List {
-		block.List[i] = rewriteStmt(stmt, env, versions)
+		block.List[i] = rewriteStmt(stmt, env, versions, hasPersistent)
 	}
 }
 
-func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int) ast.Stmt {
+func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int, hasPersistent *bool) ast.Stmt {
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
 		// Specialized check for 2-value indexing context: v, ok := m[k]
 		if len(s.Lhs) == 2 && len(s.Rhs) == 1 {
 			if _, ok := s.Rhs[0].(*ast.IndexExpr); ok {
-				s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true) // Pass true for wantTwoValues
+				s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true, hasPersistent) // Pass true for wantTwoValues
 				goto processLHS
 			}
 		}
 
 		// Default processing
 		for j, expr := range s.Rhs {
-			s.Rhs[j] = rewriteExpr(expr, env, versions, false)
+			s.Rhs[j] = rewriteExpr(expr, env, versions, false, hasPersistent)
 		}
 
 	processLHS:
@@ -126,6 +137,10 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 			newNames := make([]ast.Expr, len(s.Lhs))
 			for j, lhs := range s.Lhs {
 				if ident, ok := lhs.(*ast.Ident); ok {
+					if ident.Name == "_" {
+						newNames[j] = ident
+						continue
+					}
 					versions[ident.Name]++
 					count := versions[ident.Name]
 					mangled := fmt.Sprintf("%s_%d", ident.Name, count)
@@ -139,40 +154,42 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 		} else {
 			// Even for non-DEFINE, rewrite identifiers on LHS to latest versions
 			for j, lhs := range s.Lhs {
-				s.Lhs[j] = rewriteExpr(lhs, env, versions, false)
+				s.Lhs[j] = rewriteExpr(lhs, env, versions, false, hasPersistent)
 			}
 		}
 		return s
 
 	case *ast.ExprStmt:
-		s.X = rewriteExpr(s.X, env, versions, false)
+		s.X = rewriteExpr(s.X, env, versions, false, hasPersistent)
 		return s
 	case *ast.ReturnStmt:
 		for i, expr := range s.Results {
-			s.Results[i] = rewriteExpr(expr, env, versions, false)
+			s.Results[i] = rewriteExpr(expr, env, versions, false, hasPersistent)
 		}
 		return s
 	case *ast.BlockStmt:
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		rewriteBlock(s, newEnv, versions)
+		rewriteBlock(s, newEnv, versions, hasPersistent)
 		return s
 	case *ast.IfStmt:
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
-		s.Cond = rewriteExpr(s.Cond, newEnv, versions, false)
-		rewriteBlock(s.Body, newEnv, versions)
+		if s.Init != nil {
+			s.Init = rewriteStmt(s.Init, newEnv, versions, hasPersistent)
+		}
+		s.Cond = rewriteExpr(s.Cond, newEnv, versions, false, hasPersistent)
+		rewriteBlock(s.Body, newEnv, versions, hasPersistent)
 		if s.Else != nil {
 			if els, ok := s.Else.(*ast.BlockStmt); ok {
 				elseEnv := make([]map[string]string, len(newEnv))
 				copy(elseEnv, newEnv)
 				elseEnv = append(elseEnv, make(map[string]string))
-				rewriteBlock(els, elseEnv, versions)
+				rewriteBlock(els, elseEnv, versions, hasPersistent)
 			} else {
-				s.Else = rewriteStmt(s.Else, newEnv, versions)
+				s.Else = rewriteStmt(s.Else, newEnv, versions, hasPersistent)
 			}
 		}
 		return s
@@ -180,63 +197,88 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
-		if s.Cond != nil { s.Cond = rewriteExpr(s.Cond, newEnv, versions, false) }
-		if s.Post != nil { s.Post = rewriteStmt(s.Post, newEnv, versions) }
-		rewriteBlock(s.Body, newEnv, versions)
+		if s.Init != nil {
+			s.Init = rewriteStmt(s.Init, newEnv, versions, hasPersistent)
+		}
+		if s.Cond != nil {
+			s.Cond = rewriteExpr(s.Cond, newEnv, versions, false, hasPersistent)
+		}
+		if s.Post != nil {
+			s.Post = rewriteStmt(s.Post, newEnv, versions, hasPersistent)
+		}
+		rewriteBlock(s.Body, newEnv, versions, hasPersistent)
 		return s
 	case *ast.RangeStmt:
-		s.X = rewriteExpr(s.X, env, versions, false)
+		s.X = rewriteExpr(s.X, env, versions, false, hasPersistent)
+		// Desugar 'range x' to 'range x.All()'
+		s.X = &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   s.X,
+				Sel: ast.NewIdent("All"),
+			},
+		}
 		bodyEnv := make([]map[string]string, len(env))
 		copy(bodyEnv, env)
 		bodyEnv = append(bodyEnv, make(map[string]string))
-		
+
 		if s.Tok == token.DEFINE {
-			if ident, ok := s.Key.(*ast.Ident); ok {
+			if ident, ok := s.Key.(*ast.Ident); ok && ident.Name != "_" {
 				versions[ident.Name]++
 				mangled := fmt.Sprintf("%s_%d", ident.Name, versions[ident.Name])
 				bodyEnv[len(bodyEnv)-1][ident.Name] = mangled
 				s.Key = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
 			}
-			if ident, ok := s.Value.(*ast.Ident); ok {
+			if ident, ok := s.Value.(*ast.Ident); ok && ident.Name != "_" {
 				versions[ident.Name]++
 				mangled := fmt.Sprintf("%s_%d", ident.Name, versions[ident.Name])
 				bodyEnv[len(bodyEnv)-1][ident.Name] = mangled
 				s.Value = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
 			}
 		} else {
-			if s.Key != nil { s.Key = rewriteExpr(s.Key, env, versions, false) }
-			if s.Value != nil { s.Value = rewriteExpr(s.Value, env, versions, false) }
+			if s.Key != nil {
+				s.Key = rewriteExpr(s.Key, env, versions, false, hasPersistent)
+			}
+			if s.Value != nil {
+				s.Value = rewriteExpr(s.Value, env, versions, false, hasPersistent)
+			}
 		}
-		
-		rewriteBlock(s.Body, bodyEnv, versions)
+
+		rewriteBlock(s.Body, bodyEnv, versions, hasPersistent)
 		return s
 	case *ast.SwitchStmt:
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
-		if s.Tag != nil { s.Tag = rewriteExpr(s.Tag, newEnv, versions, false) }
-		rewriteBlock(s.Body, newEnv, versions)
+		if s.Init != nil {
+			s.Init = rewriteStmt(s.Init, newEnv, versions, hasPersistent)
+		}
+		if s.Tag != nil {
+			s.Tag = rewriteExpr(s.Tag, newEnv, versions, false, hasPersistent)
+		}
+		rewriteBlock(s.Body, newEnv, versions, hasPersistent)
 		return s
 	case *ast.TypeSwitchStmt:
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil { s.Init = rewriteStmt(s.Init, newEnv, versions) }
-		s.Assign = rewriteStmt(s.Assign, newEnv, versions)
-		rewriteBlock(s.Body, newEnv, versions)
+		if s.Init != nil {
+			s.Init = rewriteStmt(s.Init, newEnv, versions, hasPersistent)
+		}
+		s.Assign = rewriteStmt(s.Assign, newEnv, versions, hasPersistent)
+		rewriteBlock(s.Body, newEnv, versions, hasPersistent)
 		return s
 	case *ast.CaseClause:
 		for i, expr := range s.List {
-			s.List[i] = rewriteExpr(expr, env, versions, false)
+			s.List[i] = rewriteExpr(expr, env, versions, false, hasPersistent)
 		}
 		for i, st := range s.Body {
-			s.Body[i] = rewriteStmt(st, env, versions)
+			s.Body[i] = rewriteStmt(st, env, versions, hasPersistent)
 		}
 		return s
 	case *ast.DeferStmt:
-		s.Call = rewriteExpr(s.Call, env, versions, false).(*ast.CallExpr)
+		if rewritten, ok := rewriteExpr(s.Call, env, versions, false, hasPersistent).(*ast.CallExpr); ok {
+			s.Call = rewritten
+		}
 		return s
 	case *ast.DeclStmt:
 		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
@@ -249,9 +291,11 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 						env[len(env)-1][name.Name] = mangled
 						vs.Names[i] = &ast.Ident{Name: mangled, NamePos: name.Pos()}
 					}
-					if vs.Type != nil { vs.Type = rewriteType(vs.Type) }
+					if vs.Type != nil {
+						vs.Type = rewriteType(vs.Type, hasPersistent)
+					}
 					for i, val := range vs.Values {
-						vs.Values[i] = rewriteExpr(val, env, versions, false)
+						vs.Values[i] = rewriteExpr(val, env, versions, false, hasPersistent)
 					}
 				}
 			}
@@ -261,7 +305,7 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 	return stmt
 }
 
-func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int, wantTwoValues bool) ast.Expr {
+func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int, wantTwoValues bool, hasPersistent *bool) ast.Expr {
 	if expr == nil {
 		return nil
 	}
@@ -277,48 +321,53 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		}
 		return e
 	case *ast.BinaryExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
-		e.Y = rewriteExpr(e.Y, env, versions, false)
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
+		e.Y = rewriteExpr(e.Y, env, versions, false, hasPersistent)
 		return e
 	case *ast.UnaryExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
 		return e
 	case *ast.StarExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
 		return e
+	case *ast.MapType, *ast.ArrayType:
+		return rewriteType(e.(ast.Expr), hasPersistent)
 	case *ast.CallExpr:
 		// Specialized handling for builtins
 		if ident, ok := e.Fun.(*ast.Ident); ok {
 			if ident.Name == "len" && len(e.Args) == 1 {
+				*hasPersistent = true
 				return setPos(&ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 						Sel: ast.NewIdent("Len"),
 					},
-					Args: []ast.Expr{rewriteExpr(e.Args[0], env, versions, false)},
+					Args: []ast.Expr{rewriteExpr(e.Args[0], env, versions, false, hasPersistent)},
 				}, e.Pos())
 			}
 			if ident.Name == "make" && len(e.Args) >= 1 {
 				switch typ := e.Args[0].(type) {
 				case *ast.MapType:
+					*hasPersistent = true
 					return setPos(&ast.CallExpr{
 						Fun: &ast.IndexListExpr{
 							X: &ast.SelectorExpr{
 								X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 								Sel: ast.NewIdent("NewMap"),
 							},
-							Indices: []ast.Expr{rewriteType(typ.Key), rewriteType(typ.Value)},
+							Indices: []ast.Expr{rewriteType(typ.Key, hasPersistent), rewriteType(typ.Value, hasPersistent)},
 						},
 					}, e.Pos())
 				case *ast.ArrayType:
 					if typ.Len == nil {
+						*hasPersistent = true
 						return setPos(&ast.CallExpr{
 							Fun: &ast.IndexListExpr{
 								X: &ast.SelectorExpr{
 									X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 									Sel: ast.NewIdent("NewList"),
 								},
-								Indices: []ast.Expr{rewriteType(typ.Elt)},
+								Indices: []ast.Expr{rewriteType(typ.Elt, hasPersistent)},
 							},
 						}, e.Pos())
 					}
@@ -326,9 +375,9 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 			}
 		}
 
-		e.Fun = rewriteExpr(e.Fun, env, versions, false)
+		e.Fun = rewriteExpr(e.Fun, env, versions, false, hasPersistent)
 		for i, arg := range e.Args {
-			e.Args[i] = rewriteExpr(arg, env, versions, false)
+			e.Args[i] = rewriteExpr(arg, env, versions, false, hasPersistent)
 		}
 
 		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
@@ -349,7 +398,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 						Args: []ast.Expr{e.Args[i-1]},
 					}
 				}
-				var res ast.Expr = e.Args[N]
+				var res = e.Args[N]
 				for i := N - 1; i >= 0; i-- {
 					res = &ast.CallExpr{
 						Fun: &ast.SelectorExpr{
@@ -374,7 +423,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 						Args: []ast.Expr{e.Args[i-1]},
 					}
 				}
-				var res ast.Expr = &ast.CallExpr{
+				var res = &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   targets[N-1],
 						Sel: ast.NewIdent("Update"),
@@ -405,7 +454,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 						Args: []ast.Expr{e.Args[i-1]},
 					}
 				}
-				var res ast.Expr = &ast.CallExpr{
+				var res = &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   targets[N-1],
 						Sel: ast.NewIdent("Delete"),
@@ -426,7 +475,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		}
 		return e
 	case *ast.SelectorExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
 		return e
 	case *ast.IndexExpr:
 		method := "Get"
@@ -435,42 +484,45 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		}
 		return setPos(&ast.CallExpr{
 			Fun: &ast.SelectorExpr{
-				X:   rewriteExpr(e.X, env, versions, false),
+				X:   rewriteExpr(e.X, env, versions, false, hasPersistent),
 				Sel: ast.NewIdent(method),
 			},
-			Args: []ast.Expr{rewriteExpr(e.Index, env, versions, false)},
+			Args: []ast.Expr{rewriteExpr(e.Index, env, versions, false, hasPersistent)},
 		}, e.Pos())
 	case *ast.CompositeLit:
 		if mt, ok := e.Type.(*ast.MapType); ok {
-			var res ast.Expr = setPos(&ast.CallExpr{
+			*hasPersistent = true
+			var res = setPos(&ast.CallExpr{
 				Fun: &ast.IndexListExpr{
 					X: &ast.SelectorExpr{
 						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 						Sel: ast.NewIdent("NewMap"),
 					},
-					Indices: []ast.Expr{rewriteType(mt.Key), rewriteType(mt.Value)},
+					Indices: []ast.Expr{rewriteType(mt.Key, hasPersistent), rewriteType(mt.Value, hasPersistent)},
 				},
 			}, e.Pos())
 			for _, el := range e.Elts {
-				kv := el.(*ast.KeyValueExpr)
-				res = &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   res,
-						Sel: ast.NewIdent("Set"),
-					},
-					Args: []ast.Expr{rewriteExpr(kv.Key, env, versions, false), rewriteExpr(kv.Value, env, versions, false)},
+				if kv, ok := el.(*ast.KeyValueExpr); ok {
+					res = &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   res,
+							Sel: ast.NewIdent("Set"),
+						},
+						Args: []ast.Expr{rewriteExpr(kv.Key, env, versions, false, hasPersistent), rewriteExpr(kv.Value, env, versions, false, hasPersistent)},
+					}
 				}
 			}
 			return res
 		}
 		if st, ok := e.Type.(*ast.ArrayType); ok && st.Len == nil {
-			var res ast.Expr = setPos(&ast.CallExpr{
+			*hasPersistent = true
+			var res = setPos(&ast.CallExpr{
 				Fun: &ast.IndexListExpr{
 					X: &ast.SelectorExpr{
 						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
 						Sel: ast.NewIdent("NewList"),
 					},
-					Indices: []ast.Expr{rewriteType(st.Elt)},
+					Indices: []ast.Expr{rewriteType(st.Elt, hasPersistent)},
 				},
 			}, e.Pos())
 			for _, el := range e.Elts {
@@ -479,7 +531,7 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 						X:   res,
 						Sel: ast.NewIdent("Append"),
 					},
-					Args: []ast.Expr{rewriteExpr(el, env, versions, false)},
+					Args: []ast.Expr{rewriteExpr(el, env, versions, false, hasPersistent)},
 				}
 			}
 			return res
@@ -487,9 +539,9 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		// General case (e.g. Structs)
 		for i, el := range e.Elts {
 			if kv, ok := el.(*ast.KeyValueExpr); ok {
-				kv.Value = rewriteExpr(kv.Value, env, versions, false)
+				kv.Value = rewriteExpr(kv.Value, env, versions, false, hasPersistent)
 			} else {
-				e.Elts[i] = rewriteExpr(el, env, versions, false)
+				e.Elts[i] = rewriteExpr(el, env, versions, false, hasPersistent)
 			}
 		}
 		return e
@@ -497,20 +549,26 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		newEnv := make([]map[string]string, len(env))
 		copy(newEnv, env)
 		newEnv = append(newEnv, make(map[string]string))
-		rewriteBlock(e.Body, newEnv, versions)
+		rewriteBlock(e.Body, newEnv, versions, hasPersistent)
 		return e
 	case *ast.ParenExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
 		return e
 	case *ast.SliceExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
-		if e.Low != nil { e.Low = rewriteExpr(e.Low, env, versions, false) }
-		if e.High != nil { e.High = rewriteExpr(e.High, env, versions, false) }
-		if e.Max != nil { e.Max = rewriteExpr(e.Max, env, versions, false) }
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
+		if e.Low != nil {
+			e.Low = rewriteExpr(e.Low, env, versions, false, hasPersistent)
+		}
+		if e.High != nil {
+			e.High = rewriteExpr(e.High, env, versions, false, hasPersistent)
+		}
+		if e.Max != nil {
+			e.Max = rewriteExpr(e.Max, env, versions, false, hasPersistent)
+		}
 		return e
 	case *ast.TypeAssertExpr:
-		e.X = rewriteExpr(e.X, env, versions, false)
-		e.Type = rewriteType(e.Type)
+		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
+		e.Type = rewriteType(e.Type, hasPersistent)
 		return e
 	}
 

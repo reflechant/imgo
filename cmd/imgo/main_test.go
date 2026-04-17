@@ -9,7 +9,7 @@ import (
 func TestRun(t *testing.T) {
 	t.Run("Usage", func(t *testing.T) {
 		err := run([]string{"imgo"})
-		if err == nil || err.Error() != "Usage: imgo <path>" {
+		if err == nil || err.Error() != "usage: imgo <path>" {
 			t.Errorf("Expected usage error, got %v", err)
 		}
 	})
@@ -65,8 +65,8 @@ func main() {
 		}
 
 		err := run([]string{"imgo", tmp})
-		if err == nil || !contains(err.Error(), "ImGo Syntax Error") {
-			t.Errorf("Expected ImGo Syntax Error, got %v", err)
+		if err == nil || !contains(err.Error(), "transpilation error") {
+			t.Errorf("Expected transpilation error, got %v", err)
 		}
 	})
 
@@ -95,7 +95,7 @@ func main() {`
 		if err := os.Chmod(tmp, 0555); err != nil {
 			t.Fatal(err)
 		}
-		defer os.Chmod(tmp, 0755)
+		defer func() { _ = os.Chmod(tmp, 0755) }()
 
 		err := run([]string{"imgo", tmp})
 		if err == nil || !contains(err.Error(), "error creating file") {

@@ -1,9 +1,0 @@
-package main
-
-import "fmt"
-
-func main() {
-	m := map[int]int{}
-	m := m.Set(2, 4)
-    fmt.Println(len(m))
-}

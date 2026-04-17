@@ -30,7 +30,16 @@ A persistent Hash Array Mapped Trie (HAMT) based on structural sharing.
 - **`(m Map) All() iter.Seq2[K, V]`**
   Returns a Go 1.23 iterator for use in `for...range` loops.
 
-### 1.2 `List[T any]`
+### 1.2 Deep Map Operations & Convenience
+While most ImGo features are driven by the necessity of immutability, the **Deep Map API** (`SetIn`, `UpdateIn`, `DeleteIn`) is a deliberate convenience feature inspired by Clojure's `assoc-in`, `update-in`, and `dissoc-in`.
+
+These operations allow you to transform nested data structures without the tedious "nil-checking" boilerplate required in standard Go. If any intermediate map in the path is missing or `nil`, ImGo handles it gracefully:
+- **`SetIn`**: Creates intermediate maps automatically.
+- **`UpdateIn`**: Passes the zero-value to the update function if the path is missing.
+- **`DeleteIn`**: Does nothing if the path doesn't exist, safely returning the original structure.
+- **Chained Indexing**: `m["a"]["b"]["c"]` desugars to safe deep reads that return zero-values instead of panicking on intermediate `nil` maps.
+
+### 1.3 `List[T any]`
 A persistent bit-partitioned vector trie supporting efficient access and updates.
 
 - **`NewList[T any]() List[T]`**
@@ -80,5 +89,5 @@ ImGo leverages Go's built-in functions with modified functional semantics:
 - **`delete(m, k)`**: **PROHIBITED**. Use `m.Delete(k)` instead.
 - **`append(s, ...)`**: **PROHIBITED**. Use `s.Append(v)` instead.
 - **`cap(c)`, `clear(c)`, `copy(dst, src)`, `new(T)`**: **PROHIBITED**.
-- **Pointers**: `*T`, `*p`, and `&x` are **PROHIBITED**.
+- **Pointers**: `*T`, `*p`, and `&x` are **PERMITTED** for type signatures and expressions. However, using pointers for in-place mutation is **PROHIBITED**.
 - **Assignment**: `=` is **PROHIBITED**. Use `:=` for shadowing.

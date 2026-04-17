@@ -1,0 +1,32 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - unused
+    - ineffassign
+    - govet
+    - misspell
+    - exhaustive
+    - errorlint
+    - forcetypeassert
+    - gocritic
+    - predeclared
+    - nilerr
+    - nilnesserr
+    - modernize
+    - intrange
+    - exptostd
+    - perfsprint
+    - godot
+    - whitespace
+
+linters-settings:
+  exhaustive:
+    default-signifies-exhaustive: false

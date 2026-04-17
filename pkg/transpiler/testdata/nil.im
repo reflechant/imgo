@@ -1,0 +1,29 @@
+package main
+
+import "fmt"
+
+func main() {
+	testMap(map[string]int{})
+	testList([]int{})
+}
+
+func testMap(m map[string]int) {
+	fmt.Printf("Nil map len: %d\n", len(m))
+	m1 := m.Set("a", 1)
+	fmt.Printf("Set on nil map len: %d\n", len(m1))
+	val, ok := m["a"]
+	fmt.Printf("Lookup on nil map: val=%d, ok=%v\n", val, ok)
+}
+
+func testList(l []int) {
+	fmt.Printf("Nil list len: %d\n", len(l))
+	l1 := l.Append(10)
+	fmt.Printf("Append on nil list len: %d\n", len(l1))
+}
+
+// -- EXPECT --
+// Nil map len: 0
+// Set on nil map len: 1
+// Lookup on nil map: val=0, ok=false
+// Nil list len: 0
+// Append on nil list len: 1

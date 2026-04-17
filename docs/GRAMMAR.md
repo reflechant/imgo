@@ -47,7 +47,7 @@ MapType        = "map" "[" Type "]" Type .
 SliceType      = "[" "]" Type .
 ArrayType      = "[" int_lit "]" Type .
 
-(* Prohibited by grammar: Pointer types *T and Unary address-of &x *)
+(* Pointers are permitted for read-only access (*p) and in type signatures (*T) *)
 ```
 
 ## 5. Control Flow

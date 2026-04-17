@@ -1,6 +1,7 @@
 package transpiler
 
 import (
+	"bytes"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -12,53 +13,77 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	code := `package main
-import "fmt"
-func main() {
-    m := map[string]int{"a": 1}
-    m := m.Set("b", 2)
-    l := []int{10, 20}
-    l := l.Append(30)
-    
-    v, ok := m["a"]
-    fmt.Printf("m[a]=%d,%v ", v, ok)
-    
-    fmt.Printf("len(m)=%d ", len(m))
-    fmt.Printf("l[2]=%d", l[2])
-}
-`
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "test.im", code, 0)
+	testdata := "testdata"
+	entries, err := os.ReadDir(testdata)
 	if err != nil {
-		t.Fatalf("Parse error: %v", err)
+		t.Fatalf("ReadDir error: %v", err)
 	}
 
-	f = Rewrite(f)
-
-	tmp := t.TempDir()
-	genPath := filepath.Join(tmp, "main_gen.go")
-	file, err := os.Create(genPath)
-	if err != nil {
-		t.Fatalf("Create error: %v", err)
-	}
-	printer.Fprint(file, fset, f)
-	file.Close()
-
-	// We need to run this in the context of the module to find 'persistent'
-	// Since we are in 'pkg/transpiler', the module root is '../..'
 	root, _ := filepath.Abs("../..")
-	
-	cmd := exec.Command("go", "run", genPath)
-	cmd.Dir = root // Run from root to use the module's go.mod
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Run error: %v\nOutput: %s", err, string(output))
-	}
 
-	expected := "m[a]=1,true len(m)=2 l[2]=30"
-	got := strings.TrimSpace(string(output))
-	if got != expected {
-		t.Errorf("Expected %q, got %q", expected, got)
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".im") {
+			continue
+		}
+
+		t.Run(entry.Name(), func(t *testing.T) {
+			path := filepath.Join(testdata, entry.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("ReadFile error: %v", err)
+			}
+
+			// Split code and expectation
+			parts := strings.Split(string(content), "// -- EXPECT --")
+			if len(parts) != 2 {
+				t.Fatalf("Test file %s missing '// -- EXPECT --' marker", entry.Name())
+			}
+
+			imgoCode := parts[0]
+			expectedOutput := strings.TrimSpace(parts[1])
+			// Remove leading "// " from each line of expected output
+			lines := strings.Split(expectedOutput, "\n")
+			for i, line := range lines {
+				lines[i] = strings.TrimPrefix(strings.TrimSpace(line), "//")
+				lines[i] = strings.TrimSpace(lines[i])
+			}
+			expectedOutput = strings.Join(lines, "\n")
+
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, entry.Name(), imgoCode, 0)
+			if err != nil {
+				t.Fatalf("Parse error: %v", err)
+			}
+
+			f, err = Transpile(fset, f)
+			if err != nil {
+				t.Fatalf("Transpilation error in %s: %v", entry.Name(), err)
+			}
+
+			tmp := t.TempDir()
+			genPath := filepath.Join(tmp, entry.Name()+"_gen.go")
+			file, err := os.Create(genPath)
+			if err != nil {
+				t.Fatalf("Create error: %v", err)
+			}
+			_ = printer.Fprint(file, fset, f)
+			_ = file.Close()
+
+			cmd := exec.Command("go", "run", genPath)
+			cmd.Dir = root // Run from root to find 'persistent' package
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+
+			err = cmd.Run()
+			if err != nil {
+				t.Fatalf("Run error: %v\nStderr: %s\nStdout: %s", err, stderr.String(), stdout.String())
+			}
+
+			got := strings.TrimSpace(stdout.String())
+			if got != expectedOutput {
+				t.Errorf("Output mismatch.\nExpected:\n%s\n\nGot:\n%s", expectedOutput, got)
+			}
+		})
 	}
 }

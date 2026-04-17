@@ -1,8 +1,9 @@
 package persistent
 
 import (
-	"github.com/benbjohnson/immutable"
 	"iter"
+
+	"github.com/benbjohnson/immutable"
 )
 
 type Map[K comparable, V any] struct {
@@ -69,6 +70,36 @@ func (m Map[K, V]) All() iter.Seq2[K, V] {
 	}
 }
 
+func (m Map[K, V]) Keys() iter.Seq[K] {
+	return func(yield func(K) bool) {
+		if m.inner == nil {
+			return
+		}
+		it := m.inner.Iterator()
+		for !it.Done() {
+			k, _, _ := it.Next()
+			if !yield(k) {
+				return
+			}
+		}
+	}
+}
+
+func (m Map[K, V]) Values() iter.Seq[V] {
+	return func(yield func(V) bool) {
+		if m.inner == nil {
+			return
+		}
+		it := m.inner.Iterator()
+		for !it.Done() {
+			_, v, _ := it.Next()
+			if !yield(v) {
+				return
+			}
+		}
+	}
+}
+
 // SetIn implements "assoc-in" logic for maps.
 func (m Map[K, V]) SetIn(path []K, value V) Map[K, V] {
 	if len(path) == 0 {
@@ -88,7 +119,8 @@ func (m Map[K, V]) SetIn(path []K, value V) Map[K, V] {
 		subMap = NewMap[K, V]()
 	}
 
-	return m.Set(path[0], any(subMap.SetIn(path[1:], value)).(V))
+	newSub, _ := any(subMap.SetIn(path[1:], value)).(V)
+	return m.Set(path[0], newSub)
 }
 
 // UpdateIn implements "update-in" logic for maps.
@@ -111,7 +143,8 @@ func (m Map[K, V]) UpdateIn(path []K, fn func(V) V) Map[K, V] {
 		subMap = NewMap[K, V]()
 	}
 
-	return m.Set(path[0], any(subMap.UpdateIn(path[1:], fn)).(V))
+	newSub, _ := any(subMap.UpdateIn(path[1:], fn)).(V)
+	return m.Set(path[0], newSub)
 }
 
 // DeleteIn implements "dissoc-in" logic for maps.
@@ -136,5 +169,6 @@ func (m Map[K, V]) DeleteIn(path []K) Map[K, V] {
 		return m
 	}
 
-	return m.Set(path[0], any(subMap.DeleteIn(path[1:])).(V))
+	newSub, _ := any(subMap.DeleteIn(path[1:])).(V)
+	return m.Set(path[0], newSub)
 }

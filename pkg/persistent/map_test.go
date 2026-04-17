@@ -29,7 +29,7 @@ func TestMap(t *testing.T) {
 		if v != 1 {
 			t.Errorf("Expected 1 at key 'a' via Get, got %v", v)
 		}
-		v, ok = m2.Lookup("c")
+		_, ok = m2.Lookup("c")
 		if ok {
 			t.Errorf("Key 'c' should not exist")
 		}
@@ -143,15 +143,18 @@ func TestMap(t *testing.T) {
 		m2 := m.SetIn([]string{"a", "b"}, 42)
 
 		val := m2.Get("a")
-		subMap := val.(Map[string, any])
+		subMap, _ := val.(Map[string, any])
 		v := subMap.Get("b")
 		if v != 42 {
 			t.Errorf("Expected 42, got %v", v)
 		}
 
-		m3 := m2.UpdateIn([]string{"a", "b"}, func(v any) any { return v.(int) + 8 })
+		m3 := m2.UpdateIn([]string{"a", "b"}, func(v any) any {
+			vInt, _ := v.(int)
+			return vInt + 8
+		})
 		val = m3.Get("a")
-		subMap = val.(Map[string, any])
+		subMap, _ = val.(Map[string, any])
 		v = subMap.Get("b")
 		if v != 50 {
 			t.Errorf("Expected 50, got %v", v)
@@ -184,7 +187,7 @@ func TestMap(t *testing.T) {
 		m3 := m2.SetIn([]string{"a", "c"}, 2)
 		// m3["a"] should have both "b":1 and "c":2
 		val := m3.Get("a")
-		sub := val.(Map[string, any])
+		sub, _ := val.(Map[string, any])
 		if sub.Len() != 2 {
 			t.Errorf("Expected submap len 2, got %d", sub.Len())
 		}
@@ -194,9 +197,9 @@ func TestMap(t *testing.T) {
 		m := NewMap[string, any]().SetIn([]string{"a", "b", "c"}, 100)
 		m2 := m.DeleteIn([]string{"a", "b", "c"})
 		val := m2.Get("a")
-		subA := val.(Map[string, any])
+		subA, _ := val.(Map[string, any])
 		val = subA.Get("b")
-		subB := val.(Map[string, any])
+		subB, _ := val.(Map[string, any])
 		if subB.Len() != 0 {
 			t.Errorf("Expected empty submap after DeleteIn, got %d", subB.Len())
 		}
@@ -236,21 +239,21 @@ func TestMap(t *testing.T) {
 	t.Run("Deep access with list inside map", func(t *testing.T) {
 		l := NewList[int]().Append(10).Append(20)
 		m := NewMap[string, any]().Set("a", l)
-		
+
 		// This should work (m["a"].Get(0))
 		val := m.Get("a")
-		l2 := val.(List[int])
+		l2, _ := val.(List[int])
 		if l2.Get(0) != 10 {
 			t.Errorf("Expected 10, got %v", l2.Get(0))
 		}
-		
+
 		// Test missing map key returning empty list
 		m2 := NewMap[string, List[int]]()
 		l3 := m2.Get("nonexistent")
 		if l3.Len() != 0 {
 			t.Errorf("Expected empty list for missing key")
 		}
-		
+
 		// If the user does m2["nonexistent"][0], it will be m2.Get("nonexistent").Get(0)
 		// which should panic because Get(0) on empty list panics now.
 		defer func() {
@@ -260,4 +263,34 @@ func TestMap(t *testing.T) {
 		}()
 		_ = l3.Get(0)
 	})
+}
+
+func BenchmarkMapInsert(b *testing.B) {
+	m := NewMap[int, int]()
+	b.ResetTimer()
+	for i := range b.N {
+		m = m.Set(i, i)
+	}
+}
+
+func BenchmarkMapLookup(b *testing.B) {
+	m := NewMap[int, int]()
+	for i := range 1000 {
+		m = m.Set(i, i)
+	}
+	b.ResetTimer()
+	for i := range b.N {
+		_ = m.Get(i % 1000)
+	}
+}
+
+func BenchmarkMapDelete(b *testing.B) {
+	m := NewMap[int, int]()
+	for i := range 1000 {
+		m = m.Set(i, i)
+	}
+	b.ResetTimer()
+	for i := range b.N {
+		_ = m.Delete(i % 1000)
+	}
 }

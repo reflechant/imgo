@@ -61,7 +61,9 @@ Deriving new data from existing data using the same identifier is permitted thro
 - **Single-value Access:** `v := m[k]` or `v := l[i]` desugars to a `Get` call.
 - **Context-aware Access:** `v, ok := m[k]` desugars to a `Lookup` call. Note: This is only supported for maps, matching standard Go behavior.
 - **Deep Access:** Chained indexing (e.g., `m["a"]["b"]`) is safe for maps (handles missing intermediate maps by returning zero-values) but panics for lists if the index is out of bounds, matching Go's behavior.
-- **Deep Updates:** The methods `.SetIn(path..., value)`, `.UpdateIn(path..., fn)`, and `.DeleteIn(path...)` provide recursive updates for nested maps.
+- **Deep Updates:** The methods `.SetIn(path..., value)`, `.UpdateIn(path..., fn)`, and `.DeleteIn(path...)` provide recursive updates for nested maps. 
+
+**Note on Convenience:** These deep map operations are the primary "convenience" feature of ImGo. They eliminate the need for manual nil-checks at every level of a nested structure, providing a pragmatic, Clojure-like experience for complex data transformations.
 
 ## 5. Control Flow
 ImGo supports standard Go control flow: `if`, `else`, `for`, `range`, `switch`, `defer`, and `return`. Loop-based data transformations should be implemented using recursion-like patterns through identifier re-binding.

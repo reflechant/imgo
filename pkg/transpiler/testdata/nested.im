@@ -1,0 +1,46 @@
+package main
+
+import "fmt"
+
+func main() {
+	m := map[string]map[string]int{
+		"a": map[string]int{"b": 1},
+	}
+
+	// Deep Read
+	fmt.Printf("Deep Read m[a][b]: %d\n", m["a"]["b"])
+	fmt.Printf("Deep Read missing m[a][x]: %d\n", m["a"]["x"])
+	fmt.Printf("Deep Read missing m[x][y]: %d\n", m["x"]["y"]) // Should not panic
+
+	// SetIn
+	m1 := m.SetIn("a", "c", 2)
+	fmt.Printf("SetIn m[a][c]=2: %d\n", m1["a"]["c"])
+	
+	m2 := m.SetIn("x", "y", 3)
+	fmt.Printf("SetIn new path m[x][y]=3: %d\n", m2["x"]["y"])
+
+	// UpdateIn
+	m3 := m1.UpdateIn("a", "b", func(v int) int { return v + 10 })
+	fmt.Printf("UpdateIn m[a][b]+10: %d\n", m3["a"]["b"])
+
+	// DeleteIn
+	m4 := m1.DeleteIn("a", "b")
+	val, ok := m4["a"]["b"]
+	fmt.Printf("DeleteIn m[a][b]: val=%d, ok=%v\n", val, ok)
+	fmt.Printf("Still has m[a][c]: %d\n", m4["a"]["c"])
+
+	// Lookup on missing intermediate
+	_, ok2 := m["nonexistent"]["level2"]
+	fmt.Printf("Lookup on missing intermediate: ok=%v\n", ok2)
+}
+
+// -- EXPECT --
+// Deep Read m[a][b]: 1
+// Deep Read missing m[a][x]: 0
+// Deep Read missing m[x][y]: 0
+// SetIn m[a][c]=2: 2
+// SetIn new path m[x][y]=3: 3
+// UpdateIn m[a][b]+10: 11
+// DeleteIn m[a][b]: val=0, ok=false
+// Still has m[a][c]: 2
+// Lookup on missing intermediate: ok=false

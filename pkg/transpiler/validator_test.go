@@ -267,9 +267,9 @@ func main() {
 }`,
 			wantErr: "builtin 'copy' is prohibited",
 		},
-        {
-            name: "Prohibited RangeStmt mutation =",
-            code: `package main
+		{
+			name: "Prohibited RangeStmt mutation =",
+			code: `package main
 func main() {
     l := []int{1, 2}
     var i int
@@ -277,8 +277,8 @@ func main() {
         _ = i
     }
 }`,
-            wantErr: "mutation operator = is prohibited",
-        },
+			wantErr: "mutation operator = is prohibited",
+		},
 	}
 
 	for _, tt := range tests {

@@ -25,7 +25,7 @@ While ImGo code looks like standard Go, its functional core leads to several beh
 
 ### 🚫 Prohibitions
 *   **No Mutation:** Operators `=`, `+=`, `++`, `--`, etc., are strictly forbidden.
-*   **No Pointers:** `*T`, `*p`, and `&x` are forbidden to ensure data safety.
+*   **Restricted Pointers:** `*T`, `*p`, and `&x` are permitted for type signatures and expressions, but in-place mutation via pointers is strictly forbidden.
 *   **Builtins:** `append`, `cap`, `clear`, `close`, `copy`, `delete`, and `new` are prohibited.
 
 ### 🌊 Immutable Data Flow

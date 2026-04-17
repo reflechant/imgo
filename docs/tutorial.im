@@ -1,0 +1,122 @@
+package main
+
+import (
+	"fmt"
+)
+
+/*
+   Learn ImGo in Y Minutes
+   
+   ImGo is "Go with Clojure-like immutability". 
+   It maintains Go's familiar syntax while enforcing a functional core where 
+   data is treated as an immutable value.
+
+   This file is valid ImGo code. To run it:
+   imgo run docs/tutorial.im
+*/
+
+func main() {
+	// -------------------------------------------------------------------------
+	// 1. VARIABLE BINDINGS & THE EPOCHAL TIME MODEL
+	// -------------------------------------------------------------------------
+	
+	// In ImGo, 'var' is prohibited inside blocks to prevent accidental 
+	// uninitialized mutable state. We use ':=' for everything.
+	x := 10
+	
+	// Because data is immutable, you cannot "update" x.
+	// x = 20 // ERROR: mutation operator = is prohibited
+	
+	// Instead, we use "Identifier Re-binding" (Shadowing).
+	// This creates a new version of x for the current point in time.
+	x := x + 5 
+	
+	// This is NOT just a syntactic trick. The transpiler uses SSA mangling 
+	// (x_1, x_2) which makes re-binding safe for closures.
+	captured := func() { 
+		// This closure captures the SPECIFIC version of x at this moment (15).
+		fmt.Printf("Captured x: %d\n", x) 
+	}
+	
+	x := 100 // A new version of x is created
+	captured() // Prints 15, not 100! This prevents "stale closure" bugs.
+	fmt.Printf("Current x: %d\n", x)
+
+	// -------------------------------------------------------------------------
+	// 2. PERSISTENT COLLECTIONS
+	// -------------------------------------------------------------------------
+
+	// map[K]V and []T are automatically persistent data structures.
+	// They use structural sharing to make "updates" extremely efficient.
+	
+	m := map[string]int{"alice": 1, "bob": 2}
+	
+	// Every "modification" returns a brand new map.
+	m1 := m.Set("charlie", 3)
+	
+	fmt.Printf("Original map size: %d\n", len(m))  // 2
+	fmt.Printf("New map size: %d\n", len(m1))       // 3
+
+	// Lists work the same way. The 'append' builtin is prohibited.
+	l := []int{10, 20}
+	l1 := l.Append(30)
+	
+	// Indexing desugars to safe Get() calls.
+	fmt.Printf("List value: %d\n", l1[2]) // 30
+
+	// -------------------------------------------------------------------------
+	// 3. DEEP CONVENIENCE (The Clojure Way)
+	// -------------------------------------------------------------------------
+
+	// One of ImGo's best features is how it handles nested data.
+	// You don't need to check if intermediate maps are nil.
+	
+	db := map[string]map[string]int{
+		"users": map[string]int{"id_1": 30},
+	}
+
+	// Safe Deep Read:
+	// If "unknown" doesn't exist, db["unknown"] returns an empty map,
+	// and db["unknown"]["path"] returns the zero-value (0). No panics!
+	val := db["unknown"]["path"] 
+	fmt.Printf("Deep read on missing path: %d\n", val)
+
+	// Deep Write (SetIn): 
+	// Creates the entire path "logs" -> "2024-04-17" automatically.
+	db := db.SetIn("logs", "2024-04-17", 1)
+
+	// Deep Update (UpdateIn):
+	// Transforms a value deep inside a structure using a function.
+	db := db.UpdateIn("users", "id_1", func(age int) int {
+		return age + 1
+	})
+	fmt.Printf("User 1 Age: %d\n", db["users"]["id_1"]) // 31
+
+	// -------------------------------------------------------------------------
+	// 4. NIL PUNNING
+	// -------------------------------------------------------------------------
+	
+	// In ImGo, nil is a valid empty collection.
+	// This means you can call methods on nil maps or lists safely.
+	var empty map[string]int // nil
+	
+	// Instead of crashing, .Set returns a new map containing the element.
+	recovered := empty.Set("key", 100)
+	fmt.Printf("Recovered len: %d\n", len(recovered)) // 1
+
+	// -------------------------------------------------------------------------
+	// 5. BUILTIN DEVIATIONS
+	// -------------------------------------------------------------------------
+
+	// make() ignores capacity/length hints for persistent collections.
+	// make([]int, 10) returns a list of length 0, not 10.
+	lEmpty := make([]int, 10)
+	fmt.Printf("make([]int, 10) len: %d\n", len(lEmpty))
+
+	// range desugars to .All() which returns a Go 1.23 iterator.
+	fmt.Print("Iterating: ")
+	for k, v := range m1 {
+		fmt.Printf("%s:%d ", k, v)
+	}
+	fmt.Println()
+}

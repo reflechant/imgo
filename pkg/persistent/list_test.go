@@ -77,26 +77,46 @@ func TestList(t *testing.T) {
 	t.Run("AllList iterator", func(t *testing.T) {
 		l := NewList[int]().Append(1).Append(2).Append(3)
 		var sum int
-		for v := range l.All() {
-		            sum += v
-		        }
-		        if sum != 6 {
-		            t.Errorf("Expected sum 6, got %d", sum)
-		        }
+		for _, v := range l.All() {
+			sum += v
+		}
+		if sum != 6 {
+			t.Errorf("Expected sum 6, got %d", sum)
+		}
 
-		        // Nil list iteration
-		        var nl List[int]
-		        for v := range nl.All() {
-		            t.Errorf("Nil list should not yield values, got %v", v)
-		        }
+		// Nil list iteration
+		var nl List[int]
+		for _, v := range nl.All() {
+			t.Errorf("Nil list should not yield values, got %v", v)
+		}
 
-		        // Early break
-		        count := 0
-		        for range l.All() {			count++
+		// Early break
+		count := 0
+		for range l.All() {
+			count++
 			break
 		}
 		if count != 1 {
 			t.Errorf("Expected count 1 after early break, got %d", count)
 		}
 	})
+}
+
+func BenchmarkListAppend(b *testing.B) {
+	l := NewList[int]()
+	b.ResetTimer()
+	for i := range b.N {
+		l = l.Append(i)
+	}
+}
+
+func BenchmarkListGet(b *testing.B) {
+	l := NewList[int]()
+	for i := range 1000 {
+		l = l.Append(i)
+	}
+	b.ResetTimer()
+	for i := range b.N {
+		_ = l.Get(i % 1000)
+	}
 }
