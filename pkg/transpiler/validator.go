@@ -6,48 +6,56 @@ import (
 	"go/token"
 )
 
-// Validate checks that the ImGo source file follows the "No Mutation" and "No Pointers" rules.
+type validator struct {
+	fset  *token.FileSet
+	diags Diagnostics
+}
+
+func (v *validator) report(pos token.Pos, code, msg string) {
+	v.diags = append(v.diags, Diagnostic{
+		Pos:     v.fset.Position(pos),
+		Code:    code,
+		Message: msg,
+	})
+}
+
+// Validate checks that the ImGo source file follows the "No Mutation" rules.
+// It accumulates every violation and returns them together so users see all
+// problems at once. Returns nil when the file passes.
 func Validate(fset *token.FileSet, file *ast.File) error {
-	var walkErr error
+	v := &validator{fset: fset}
 	ast.Inspect(file, func(n ast.Node) bool {
 		if n == nil {
 			return false
 		}
 
 		switch node := n.(type) {
-		case *ast.GenDecl:
-			// Package-level vars are allowed without explicit initialization.
-			// They will follow Go's zero-value defaults.
 		case *ast.DeclStmt:
-			// Prohibit 'var' inside functions/blocks. Only ':=', 'const', or type decls allowed.
 			if gen, ok := node.Decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
-				walkErr = fmt.Errorf("'var' is prohibited inside blocks at %v; use ':=' for shadowing", fset.Position(node.Pos()))
-				return false
+				v.report(node.Pos(), CodeDisallowedVar,
+					"'var' is prohibited inside blocks; use ':=' for shadowing")
 			}
 		case *ast.AssignStmt:
-			// Allow token.DEFINE (:=), reject all others (=, +=, -=, *=, etc.)
 			if node.Tok != token.DEFINE {
-				walkErr = fmt.Errorf("mutation operator %s is prohibited in ImGo at %v; use := for shadowing", node.Tok, fset.Position(node.Pos()))
-				return false
+				v.report(node.Pos(), CodeDisallowedAssignment,
+					fmt.Sprintf("mutation operator %s is prohibited in ImGo; use := for shadowing", node.Tok))
 			}
 		case *ast.IncDecStmt:
-			// Reject x++ and x--
-			walkErr = fmt.Errorf("mutation (++, --) is prohibited in ImGo at %v", fset.Position(node.Pos()))
-			return false
+			v.report(node.Pos(), CodeDisallowedIncDec,
+				"mutation (++, --) is prohibited in ImGo")
 		case *ast.CallExpr:
-			// Prohibit builtins that imply in-place mutation or return pointers.
 			if ident, ok := node.Fun.(*ast.Ident); ok {
 				switch ident.Name {
 				case "append", "cap", "clear", "close", "copy", "new":
-					walkErr = fmt.Errorf("builtin '%s' is prohibited in ImGo at %v; use functional equivalents", ident.Name, fset.Position(node.Pos()))
-					return false
+					v.report(node.Pos(), CodeDisallowedBuiltin,
+						fmt.Sprintf("builtin '%s' is prohibited in ImGo; use functional equivalents", ident.Name))
 				case "delete":
-					walkErr = fmt.Errorf("'delete' builtin is prohibited in ImGo at %v; use '.Delete(k)' and shadow the result", fset.Position(node.Pos()))
-					return false
+					v.report(node.Pos(), CodeDisallowedBuiltin,
+						"'delete' builtin is prohibited in ImGo; use '.Delete(k)' and shadow the result")
 				}
 			}
 		}
 		return true
 	})
-	return walkErr
+	return v.diags.asError()
 }

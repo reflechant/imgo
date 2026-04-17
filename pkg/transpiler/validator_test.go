@@ -308,3 +308,74 @@ func main() {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || (len(substr) > 0 && (s[0:len(substr)] == substr || contains(s[1:], substr))))
 }
+
+func TestValidateAccumulatesDiagnostics(t *testing.T) {
+	code := `package main
+func main() {
+	x := 5
+	x = 10
+	x++
+	y := append([]int{1}, 2)
+	println(y)
+}`
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "test.im", code, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	verr := Validate(fset, f)
+	if verr == nil {
+		t.Fatal("expected diagnostics, got nil")
+	}
+	ds, ok := verr.(Diagnostics)
+	if !ok {
+		t.Fatalf("expected Diagnostics, got %T", verr)
+	}
+	if len(ds) != 3 {
+		t.Fatalf("expected 3 diagnostics, got %d: %v", len(ds), ds)
+	}
+
+	wantCodes := []string{CodeDisallowedAssignment, CodeDisallowedIncDec, CodeDisallowedBuiltin}
+	for i, d := range ds {
+		if d.Code != wantCodes[i] {
+			t.Errorf("ds[%d].Code = %q, want %q", i, d.Code, wantCodes[i])
+		}
+		if d.Pos.Filename != "test.im" {
+			t.Errorf("ds[%d].Pos.Filename = %q, want test.im", i, d.Pos.Filename)
+		}
+		if d.Pos.Line == 0 || d.Pos.Column == 0 {
+			t.Errorf("ds[%d] missing position: %+v", i, d.Pos)
+		}
+	}
+}
+
+func TestDiagnosticFormat(t *testing.T) {
+	code := `package main
+func main() {
+	x := 5
+	x = 10
+}`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "test.im", code, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	verr := Validate(fset, f)
+	if verr == nil {
+		t.Fatal("expected error, got nil")
+	}
+	msg := verr.Error()
+	want := "test.im:4:2: error[E001] mutation operator = is prohibited"
+	if !contains(msg, want) {
+		t.Errorf("Error() = %q, want substring %q", msg, want)
+	}
+}
+
+func TestEmptyDiagnostics(t *testing.T) {
+	var ds Diagnostics
+	if got := ds.Error(); got != "" {
+		t.Errorf("empty Diagnostics.Error() = %q, want empty", got)
+	}
+}
