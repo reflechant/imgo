@@ -343,12 +343,30 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		return rewriteType(e.(ast.Expr), hasPersistent)
 	case *ast.CallExpr:
 		// ImGo value-update builtins (set/get/update/delete and their *In
-		// forms). Translate to method-call shape and re-rewrite so the
-		// existing method-call lowering takes care of the rest. Names are
-		// only treated as builtins when not shadowed by a local binding
-		// and when the receiver is map-like (or unknown — fall back).
+		// forms). Dispatch on the receiver's static type:
+		//   - struct: lower get/getIn to selector chains; lower
+		//     update/updateIn to an IIFE that copies the struct and
+		//     overwrites the field.
+		//   - list (slice): translate to method-call shape using
+		//     persistent.List's .Set/.Get; In-forms reuse the existing
+		//     map In expansion below.
+		//   - map (or unknown): translate to method-call shape and
+		//     reuse the existing map lowering.
+		// Builtin recognition is suppressed when the name is shadowed
+		// by a local binding (Go's own len/append shadowing rule).
 		if ident, ok := e.Fun.(*ast.Ident); ok {
 			if imgoBuiltins[ident.Name] && len(e.Args) >= 2 && !isShadowed(env, ident.Name) {
+				if isStructLike(info, e.Args[0]) {
+					typeExpr := typeExprFor(typeOf(info, e.Args[0]))
+					if expanded := expandStructBuiltin(ident.Name, e.Args, typeExpr, e.Pos()); expanded != nil {
+						return rewriteExpr(expanded, env, versions, wantTwoValues, info, hasPersistent)
+					}
+				}
+				if isListLike(info, e.Args[0]) || isArrayLike(info, e.Args[0]) {
+					if expanded := expandListBuiltin(ident.Name, e.Args, e.Pos()); expanded != nil {
+						return rewriteExpr(expanded, env, versions, wantTwoValues, info, hasPersistent)
+					}
+				}
 				if isMapLike(info, e.Args[0]) {
 					translated := expandMapBuiltin(ident.Name, e.Args, wantTwoValues, e.Pos())
 					return rewriteExpr(translated, env, versions, wantTwoValues, info, hasPersistent)
