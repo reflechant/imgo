@@ -13,6 +13,10 @@ const (
 	CodeDisallowedIncDec     = "E002"
 	CodeDisallowedVar        = "E003"
 	CodeDisallowedBuiltin    = "E010"
+	CodeDisallowedChanType   = "E020"
+	CodeDisallowedGoStmt     = "E021"
+	CodeDisallowedChanOp     = "E022"
+	CodeDisallowedSelectStmt = "E023"
 )
 
 // Diagnostic is a single validation error carrying enough position

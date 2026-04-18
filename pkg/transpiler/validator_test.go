@@ -279,6 +279,59 @@ func main() {
 }`,
 			wantErr: "mutation operator = is prohibited",
 		},
+		{
+			name: "Prohibited RangeStmt two-value mutation =",
+			code: `package main
+func main() {
+    l := []int{1, 2}
+    var i, v int
+    for i, v = range l {
+        _ = i
+        _ = v
+    }
+}`,
+			wantErr: "mutation operator = is prohibited",
+		},
+		{
+			name: "Prohibited chan type",
+			code: `package main
+type C chan int`,
+			wantErr: "channel types are prohibited",
+		},
+		{
+			name: "Prohibited go statement",
+			code: `package main
+func main() {
+    go func() {}()
+}`,
+			wantErr: "'go' statement is prohibited",
+		},
+		{
+			name: "Prohibited chan send",
+			code: `package main
+func main() {
+    var c chan int
+    c <- 1
+}`,
+			wantErr: "channel send '<-' is prohibited",
+		},
+		{
+			name: "Prohibited chan receive",
+			code: `package main
+func main() {
+    var c chan int
+    <-c
+}`,
+			wantErr: "channel receive '<-' is prohibited",
+		},
+		{
+			name: "Prohibited select statement",
+			code: `package main
+func main() {
+    select {}
+}`,
+			wantErr: "'select' statement is prohibited",
+		},
 	}
 
 	for _, tt := range tests {

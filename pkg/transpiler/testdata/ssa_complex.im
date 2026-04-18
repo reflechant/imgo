@@ -1,0 +1,33 @@
+package main
+
+import "fmt"
+
+func main() {
+	x := 1
+	if x := 2; x > 0 {
+		fmt.Printf("Inside if: %d\n", x)
+	}
+	fmt.Printf("After if: %d\n", x)
+
+	for i := 0; i < 3; {
+		x := i + 10
+		fmt.Printf("Inside for: %d\n", x)
+		break // Avoid infinite loop since we can't increment i yet
+	}
+	fmt.Printf("After for: %d\n", x)
+
+	l := []int{100, 200}
+	for _, x := range l {
+		fmt.Printf("Range x: %d\n", x)
+	}
+	fmt.Printf("Final x: %d\n", x)
+}
+
+// -- EXPECT --
+// Inside if: 2
+// After if: 1
+// Inside for: 10
+// After for: 1
+// Range x: 100
+// Range x: 200
+// Final x: 1

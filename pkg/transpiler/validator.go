@@ -54,6 +54,23 @@ func Validate(fset *token.FileSet, file *ast.File) error {
 						"'delete' builtin is prohibited in ImGo; use '.Delete(k)' and shadow the result")
 				}
 			}
+		case *ast.ChanType:
+			v.report(node.Pos(), CodeDisallowedChanType,
+				"channel types are prohibited in ImGo; concurrency is reserved for Stage 8")
+		case *ast.GoStmt:
+			v.report(node.Pos(), CodeDisallowedGoStmt,
+				"'go' statement is prohibited in ImGo; concurrency is reserved for Stage 8")
+		case *ast.SendStmt:
+			v.report(node.Pos(), CodeDisallowedChanOp,
+				"channel send '<-' is prohibited in ImGo; concurrency is reserved for Stage 8")
+		case *ast.UnaryExpr:
+			if node.Op == token.ARROW {
+				v.report(node.Pos(), CodeDisallowedChanOp,
+					"channel receive '<-' is prohibited in ImGo; concurrency is reserved for Stage 8")
+			}
+		case *ast.SelectStmt:
+			v.report(node.Pos(), CodeDisallowedSelectStmt,
+				"'select' statement is prohibited in ImGo; concurrency is reserved for Stage 8")
 		}
 		return true
 	})

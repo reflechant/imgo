@@ -327,6 +327,19 @@ func main() {
 			},
 		},
 		{
+			name: "Struct literal bare elements must be rewritten",
+			input: `package main
+type S struct { X, Y int }
+func main() {
+    x := 5
+    y := 10
+    s := S{x, y}
+}`,
+			expected: []string{
+				"s_1 := S{x_1, y_1}",
+			},
+		},
+		{
 			name: "Make builtin desugaring",
 			input: `package main
 func main() {
@@ -340,11 +353,8 @@ func main() {
 		},
 
 
-		// === BUG: UnaryExpr not rewritten ===
-		// rewriteExpr has no case for *ast.UnaryExpr, so identifiers inside
-		// unary expressions (-x, !b, &x) are never mangled.
 		{
-			name: "BUG: UnaryExpr operands must be rewritten",
+			name: "UnaryExpr operands must be rewritten",
 			input: `package main
 func main() {
     x := 5
@@ -359,11 +369,8 @@ func main() {
 				"p_1 := &x_1",
 			},
 		},
-
-		// === BUG: StarExpr (pointer dereference) not rewritten ===
-		// rewriteExpr has no case for *ast.StarExpr, so *p doesn't rewrite p.
 		{
-			name: "BUG: StarExpr operand must be rewritten",
+			name: "StarExpr operand must be rewritten",
 			input: `package main
 func main() {
     x := 5
@@ -374,12 +381,8 @@ func main() {
 				"y_1 := *p_1",
 			},
 		},
-
-		// === BUG: ForStmt (classic for loop) completely unhandled ===
-		// rewriteStmt has no case for *ast.ForStmt, so the condition,
-		// body, and all nested expressions are left unrewritten.
 		{
-			name: "BUG: ForStmt condition must be rewritten",
+			name: "ForStmt condition must be rewritten",
 			input: `package main
 func main() {
     x := true
@@ -392,7 +395,7 @@ func main() {
 			},
 		},
 		{
-			name: "BUG: ForStmt body must be rewritten",
+			name: "ForStmt body must be rewritten",
 			input: `package main
 func main() {
     for {
@@ -406,13 +409,8 @@ func main() {
 				"fmt.Println(x_1)",
 			},
 		},
-
-		// === BUG: Struct CompositeLit values not rewritten ===
-		// rewriteExpr's CompositeLit handler only processes MapType and
-		// ArrayType. Struct literals fall through with element values
-		// unrewritten.
 		{
-			name: "BUG: Struct literal values must be rewritten",
+			name: "Struct literal values must be rewritten",
 			input: `package main
 type S struct { X int }
 func main() {
@@ -423,13 +421,8 @@ func main() {
 				"s_1 := S{X: x_1}",
 			},
 		},
-
-		// === BUG: IfStmt init scope leaks into parent scope ===
-		// The init statement is processed in the parent env, so a := in
-		// the init permanently overwrites the outer binding. After the if,
-		// the original outer variable is no longer resolvable.
 		{
-			name: "BUG: IfStmt init must not leak into parent scope",
+			name: "IfStmt init must not leak into parent scope",
 			input: `package main
 func main() {
     x := 1
@@ -441,11 +434,8 @@ func main() {
 				"fmt.Println(x_1)",
 			},
 		},
-
-		// === BUG: SwitchStmt init scope leaks into parent scope ===
-		// Same issue as IfStmt: the init is processed in the parent env.
 		{
-			name: "BUG: SwitchStmt init must not leak into parent scope",
+			name: "SwitchStmt init must not leak into parent scope",
 			input: `package main
 func main() {
     x := 1
@@ -619,13 +609,15 @@ func TestRewriteEdgeCases(t *testing.T) {
 	}
 	rewriteStmt(forFullStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
 
-	// Test RangeStmt with non-Ident Key/Value
-	rangeNonIdentStmt := &ast.RangeStmt{
-		X:     &ast.Ident{Name: "l"},
-		Key:   &ast.BasicLit{Kind: token.INT, Value: "0"},
-		Value: &ast.BasicLit{Kind: token.INT, Value: "0"},
-		Tok:   token.DEFINE,
-		Body:  &ast.BlockStmt{},
+	// Test make with fixed array (should not be rewritten)
+	makeArr := &ast.CallExpr{
+		Fun:  ast.NewIdent("make"),
+		Args: []ast.Expr{&ast.ArrayType{Len: &ast.BasicLit{Kind: token.INT, Value: "5"}, Elt: ast.NewIdent("int")}},
 	}
-	rewriteStmt(rangeNonIdentStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteExpr(makeArr, nil, make(map[string]int), false, hasPersistent)
+
+	// Test setPos(nil)
+	if setPos(nil, token.Pos(1)) != nil {
+		t.Errorf("expected nil")
+	}
 }
