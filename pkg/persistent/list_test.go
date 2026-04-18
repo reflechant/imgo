@@ -74,6 +74,46 @@ func TestList(t *testing.T) {
 		l.Set(0, 1)
 	})
 
+	t.Run("Slice", func(t *testing.T) {
+		l := NewList[int]().Append(10).Append(20).Append(30).Append(40)
+
+		s := Slice(l, 1, 3)
+		if s.Len() != 2 {
+			t.Errorf("expected len 2, got %d", s.Len())
+		}
+		if s.Get(0) != 20 || s.Get(1) != 30 {
+			t.Errorf("expected [20, 30], got [%d, %d]", s.Get(0), s.Get(1))
+		}
+
+		empty := Slice(l, 2, 2)
+		if empty.Len() != 0 {
+			t.Errorf("expected empty slice, got len %d", empty.Len())
+		}
+
+		full := Slice(l, 0, l.Len())
+		if full.Len() != 4 {
+			t.Errorf("expected len 4, got %d", full.Len())
+		}
+	})
+
+	t.Run("Slice on nil list", func(t *testing.T) {
+		var l List[int]
+		s := Slice(l, 0, 0)
+		if s.Len() != 0 {
+			t.Errorf("expected empty slice, got len %d", s.Len())
+		}
+	})
+
+	t.Run("Slice on nil list panics on non-zero bounds", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("expected panic on out-of-range slice of nil list")
+			}
+		}()
+		var l List[int]
+		Slice(l, 0, 1)
+	})
+
 	t.Run("AllList iterator", func(t *testing.T) {
 		l := NewList[int]().Append(1).Append(2).Append(3)
 		var sum int

@@ -58,6 +58,19 @@ func (l List[T]) All() iter.Seq2[int, T] {
 	}
 }
 
+// Slice returns a sub-list spanning [low, high). It panics on out-of-range
+// indices, matching Go slice semantics. A nil list with low == high == 0
+// returns an empty list.
+func Slice[T any](l List[T], low, high int) List[T] {
+	if l.inner == nil {
+		if low != 0 || high != 0 {
+			panic(fmt.Sprintf("runtime error: slice bounds out of range [%d:%d] with length 0", low, high))
+		}
+		return NewList[T]()
+	}
+	return List[T]{inner: l.inner.Slice(low, high)}
+}
+
 func (l List[T]) Values() iter.Seq[T] {
 	return func(yield func(T) bool) {
 		if l.inner == nil {

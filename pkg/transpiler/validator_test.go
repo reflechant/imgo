@@ -332,6 +332,28 @@ func main() {
 }`,
 			wantErr: "'select' statement is prohibited",
 		},
+		{
+			name: "Prohibited three-index slice",
+			code: `package main
+func main() {
+    s := []int{1, 2, 3}
+    _ = s[0:2:3]
+}`,
+			wantErr: "three-index slice",
+		},
+		{
+			name: "Valid two-index slice",
+			code: `package main
+func main() {
+    s := []int{1, 2, 3}
+    a := s[1:2]
+    b := s[:2]
+    c := s[1:]
+    d := s[:]
+    println(a, b, c, d)
+}`,
+			wantErr: "",
+		},
 	}
 
 	for _, tt := range tests {

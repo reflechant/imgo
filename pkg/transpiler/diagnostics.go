@@ -17,6 +17,7 @@ const (
 	CodeDisallowedGoStmt     = "E021"
 	CodeDisallowedChanOp     = "E022"
 	CodeDisallowedSelectStmt = "E023"
+	CodeDisallowedFullSlice  = "E030"
 )
 
 // Diagnostic is a single validation error carrying enough position

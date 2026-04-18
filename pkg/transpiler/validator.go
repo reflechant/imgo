@@ -71,6 +71,11 @@ func Validate(fset *token.FileSet, file *ast.File) error {
 		case *ast.SelectStmt:
 			v.report(node.Pos(), CodeDisallowedSelectStmt,
 				"'select' statement is prohibited in ImGo; concurrency is reserved for Stage 8")
+		case *ast.SliceExpr:
+			if node.Slice3 {
+				v.report(node.Pos(), CodeDisallowedFullSlice,
+					"three-index slice 'a[low:high:max]' is prohibited in ImGo; capacity has no persistent analog")
+			}
 		}
 		return true
 	})

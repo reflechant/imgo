@@ -176,7 +176,7 @@ func main() {
         fmt.Println("default")
     }
     s := []int{1, 2, 3}
-    s2 := s[1:2:3]
+    s2 := s[1:2]
     var a any = s2
     s3 := a.([]int)
     _ = s[1:]
@@ -190,12 +190,12 @@ func main() {
 				"case 6:",
 				"fmt.Println(y_1)",
 				"s_1 := persistent.NewList[int]().Append(1).Append(2).Append(3)",
-				"s2_1 := s_1[1:2:3]",
+				"s2_1 := persistent.Slice(s_1, 1, 2)",
 				"var a_1 any = s2_1",
 				"s3_1 := a_1.(persistent.List[int])",
-				"s_1[1:]",
-				"s_1[:2]",
-				"s_1[:]",
+				"persistent.Slice(s_1, 1, persistent.Len(s_1))",
+				"persistent.Slice(s_1, 0, 2)",
+				"persistent.Slice(s_1, 0, persistent.Len(s_1))",
 			},
 		},
 		{

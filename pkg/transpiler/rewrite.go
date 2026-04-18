@@ -555,17 +555,33 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
 		return e
 	case *ast.SliceExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
+		*hasPersistent = true
+		x := rewriteExpr(e.X, env, versions, false, hasPersistent)
+		var low ast.Expr
 		if e.Low != nil {
-			e.Low = rewriteExpr(e.Low, env, versions, false, hasPersistent)
+			low = rewriteExpr(e.Low, env, versions, false, hasPersistent)
+		} else {
+			low = &ast.BasicLit{Kind: token.INT, Value: "0"}
 		}
+		var high ast.Expr
 		if e.High != nil {
-			e.High = rewriteExpr(e.High, env, versions, false, hasPersistent)
+			high = rewriteExpr(e.High, env, versions, false, hasPersistent)
+		} else {
+			high = &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ast.NewIdent("persistent"),
+					Sel: ast.NewIdent("Len"),
+				},
+				Args: []ast.Expr{x},
+			}
 		}
-		if e.Max != nil {
-			e.Max = rewriteExpr(e.Max, env, versions, false, hasPersistent)
-		}
-		return e
+		return setPos(&ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   setPos(ast.NewIdent("persistent"), e.Pos()),
+				Sel: ast.NewIdent("Slice"),
+			},
+			Args: []ast.Expr{x, low, high},
+		}, e.Pos())
 	case *ast.TypeAssertExpr:
 		e.X = rewriteExpr(e.X, env, versions, false, hasPersistent)
 		e.Type = rewriteType(e.Type, hasPersistent)
