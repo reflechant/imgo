@@ -6,11 +6,13 @@ import (
 )
 
 // Transpile performs the full ImGo transpilation pipeline:
-// 1. Validates the AST against ImGo purity rules.
-// 2. Rewrites the AST to use persistent data structures and SSA mangling.
+// 1. Type-checks the AST on a best-effort basis (errors swallowed).
+// 2. Validates the AST against ImGo purity rules.
+// 3. Rewrites the AST to use persistent data structures and SSA mangling.
 func Transpile(fset *token.FileSet, file *ast.File) (*ast.File, error) {
-	if err := Validate(fset, file); err != nil {
+	info := typeCheck(fset, file)
+	if err := Validate(fset, file, info); err != nil {
 		return nil, err
 	}
-	return Rewrite(file), nil
+	return Rewrite(file, info), nil
 }

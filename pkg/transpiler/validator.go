@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 )
 
 type validator struct {
 	fset  *token.FileSet
+	info  *types.Info
 	diags Diagnostics
 }
 
@@ -21,9 +23,11 @@ func (v *validator) report(pos token.Pos, code, msg string) {
 
 // Validate checks that the ImGo source file follows the "No Mutation" rules.
 // It accumulates every violation and returns them together so users see all
-// problems at once. Returns nil when the file passes.
-func Validate(fset *token.FileSet, file *ast.File) error {
-	v := &validator{fset: fset}
+// problems at once. Returns nil when the file passes. The info parameter
+// is optional; when non-nil, validator rules may use it for type-aware
+// decisions.
+func Validate(fset *token.FileSet, file *ast.File, info *types.Info) error {
+	v := &validator{fset: fset, info: info}
 	ast.Inspect(file, func(n ast.Node) bool {
 		if n == nil {
 			return false

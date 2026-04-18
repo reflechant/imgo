@@ -447,6 +447,26 @@ func main() {
 				"fmt.Println(x_1)",
 			},
 		},
+		{
+			name: "User struct with SetIn method is not rewritten",
+			input: `package main
+type S struct{ n int }
+func (s S) SetIn(a, b, v int) S { return s }
+func (s S) UpdateIn(a, b int, f func(int) int) S { return s }
+func (s S) DeleteIn(a, b int) S { return s }
+func main() {
+    s := S{}
+    r1 := s.SetIn(1, 2, 3)
+    r2 := s.UpdateIn(1, 2, func(v int) int { return v })
+    r3 := s.DeleteIn(1, 2)
+    fmt.Println(r1, r2, r3)
+}`,
+			expected: []string{
+				"r1_1 := s_1.SetIn(1, 2, 3)",
+				"r2_1 := s_1.UpdateIn(1, 2, func(v int) int",
+				"r3_1 := s_1.DeleteIn(1, 2)",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -457,7 +477,8 @@ func main() {
 				t.Fatalf("Failed to parse input code: %v", err)
 			}
 
-			f = Rewrite(f)
+			info := typeCheck(fset, f)
+			f = Rewrite(f, info)
 
 			var buf bytes.Buffer
 			_ = printer.Fprint(&buf, fset, f)
@@ -477,10 +498,10 @@ func TestRewriteEdgeCases(t *testing.T) {
 	hasPersistent := &hp
 
 	// Test rewriteBlock(nil)
-	rewriteBlock(nil, nil, make(map[string]int), hasPersistent)
+	rewriteBlock(nil, nil, make(map[string]int), nil, hasPersistent)
 
 	// Test rewriteExpr(nil)
-	if rewriteExpr(nil, nil, make(map[string]int), false, hasPersistent) != nil {
+	if rewriteExpr(nil, nil, make(map[string]int), false, nil, hasPersistent) != nil {
 		t.Errorf("Expected nil for rewriteExpr(nil)")
 	}
 
@@ -528,7 +549,7 @@ func TestRewriteEdgeCases(t *testing.T) {
 		Tok: token.DEFINE,
 		Rhs: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "1"}},
 	}
-	rewriteStmt(stmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(stmt, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test SwitchStmt with Init
 	sw := &ast.SwitchStmt{
@@ -540,7 +561,7 @@ func TestRewriteEdgeCases(t *testing.T) {
 		Tag:  ast.NewIdent("x"),
 		Body: &ast.BlockStmt{},
 	}
-	rewriteStmt(sw, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(sw, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test IfStmt with Else as non-block (else if)
 	ifStmt := &ast.IfStmt{
@@ -551,14 +572,14 @@ func TestRewriteEdgeCases(t *testing.T) {
 			Body: &ast.BlockStmt{},
 		},
 	}
-	rewriteStmt(ifStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(ifStmt, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test RangeStmt with nil Key/Value
 	rangeStmt := &ast.RangeStmt{
 		X:    &ast.Ident{Name: "l"},
 		Body: &ast.BlockStmt{},
 	}
-	rewriteStmt(rangeStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(rangeStmt, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test TypeSwitchStmt with Init
 	tsStmt := &ast.TypeSwitchStmt{
@@ -570,27 +591,27 @@ func TestRewriteEdgeCases(t *testing.T) {
 		Assign: &ast.ExprStmt{X: &ast.TypeAssertExpr{X: ast.NewIdent("a"), Type: nil}},
 		Body:   &ast.BlockStmt{},
 	}
-	rewriteStmt(tsStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(tsStmt, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test IndexExpr with nil Index
 	idxExpr := &ast.IndexExpr{
 		X:     ast.NewIdent("a"),
 		Index: nil,
 	}
-	rewriteExpr(idxExpr, []map[string]string{make(map[string]string)}, make(map[string]int), false, hasPersistent)
+	rewriteExpr(idxExpr, []map[string]string{make(map[string]string)}, make(map[string]int), false, nil, hasPersistent)
 
 	// Test CompositeLit with non-KeyValueExpr elements
 	compLit := &ast.CompositeLit{
 		Type: ast.NewIdent("S"),
 		Elts: []ast.Expr{ast.NewIdent("x")},
 	}
-	rewriteExpr(compLit, []map[string]string{{"x": "x_1"}}, make(map[string]int), false, hasPersistent)
+	rewriteExpr(compLit, []map[string]string{{"x": "x_1"}}, make(map[string]int), false, nil, hasPersistent)
 
 	// Test ForStmt with nil Init, Cond, Post (for { ... })
 	forNilStmt := &ast.ForStmt{
 		Body: &ast.BlockStmt{},
 	}
-	rewriteStmt(forNilStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(forNilStmt, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test ForStmt with non-nil Init, Cond, Post
 	forFullStmt := &ast.ForStmt{
@@ -607,14 +628,14 @@ func TestRewriteEdgeCases(t *testing.T) {
 		Post: &ast.ExprStmt{X: ast.NewIdent("i")},
 		Body: &ast.BlockStmt{},
 	}
-	rewriteStmt(forFullStmt, []map[string]string{make(map[string]string)}, make(map[string]int), hasPersistent)
+	rewriteStmt(forFullStmt, []map[string]string{make(map[string]string)}, make(map[string]int), nil, hasPersistent)
 
 	// Test make with fixed array (should not be rewritten)
 	makeArr := &ast.CallExpr{
 		Fun:  ast.NewIdent("make"),
 		Args: []ast.Expr{&ast.ArrayType{Len: &ast.BasicLit{Kind: token.INT, Value: "5"}, Elt: ast.NewIdent("int")}},
 	}
-	rewriteExpr(makeArr, nil, make(map[string]int), false, hasPersistent)
+	rewriteExpr(makeArr, nil, make(map[string]int), false, nil, hasPersistent)
 
 	// Test setPos(nil)
 	if setPos(nil, token.Pos(1)) != nil {

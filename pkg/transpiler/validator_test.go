@@ -364,7 +364,7 @@ func main() {
 				t.Fatalf("Failed to parse test code: %v", err)
 			}
 
-			err = Validate(fset, f)
+			err = Validate(fset, f, nil)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("Validate() unexpected error: %v", err)
@@ -400,7 +400,7 @@ func main() {
 		t.Fatalf("parse: %v", err)
 	}
 
-	verr := Validate(fset, f)
+	verr := Validate(fset, f, nil)
 	if verr == nil {
 		t.Fatal("expected diagnostics, got nil")
 	}
@@ -437,7 +437,7 @@ func main() {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	verr := Validate(fset, f)
+	verr := Validate(fset, f, nil)
 	if verr == nil {
 		t.Fatal("expected error, got nil")
 	}
