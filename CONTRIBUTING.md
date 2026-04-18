@@ -35,3 +35,6 @@ go test ./...
 - Avoid `var` in function blocks (use `:=`).
 - Never introduce mutation where a functional transformation is possible.
 - Use SSA-style mangling for new transformation patterns.
+
+## 🤖 AI Assistance
+Contributors are encouraged to use AI tools responsibly. This project is maintained with the assistance of Claude 4.6, 4.7, and Gemini 3.

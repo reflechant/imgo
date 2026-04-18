@@ -88,3 +88,9 @@ For maps, ImGo maintains Go's safe indexing:
 
 ### 6.3 Physical Immutability
 Every operation that "changes" a collection returns a brand-new header structure. While structural sharing makes this efficient, it means that no two parts of your program can ever share a "mutable" view of the same data.
+
+---
+
+## 🤖 AI Disclosure
+The ImGo language specification and implementation are developed with the assistance of Claude 4.6, 4.7, and Gemini 3 models.
+

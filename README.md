@@ -44,4 +44,7 @@ While ImGo code looks like standard Go, its functional core leads to several beh
 - **[Getting Started Tutorial](docs/TUTORIAL.md)**: Build your first ImGo program.
 
 ---
-*Built with ❤️ for the functional programming community.*
+*Built with ❤️ for the Go community.*
+
+## 🤖 AI Disclosure
+This project is developed and maintained with the assistance of AI models, including Claude 4.6, 4.7, and Gemini 3.
