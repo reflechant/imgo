@@ -53,9 +53,6 @@ func Validate(fset *token.FileSet, file *ast.File, info *types.Info) error {
 				case "append", "cap", "clear", "close", "copy", "new":
 					v.report(node.Pos(), CodeDisallowedBuiltin,
 						fmt.Sprintf("builtin '%s' is prohibited in ImGo; use functional equivalents", ident.Name))
-				case "delete":
-					v.report(node.Pos(), CodeDisallowedBuiltin,
-						"'delete' builtin is prohibited in ImGo; use '.Delete(k)' and shadow the result")
 				}
 			}
 		case *ast.ChanType:

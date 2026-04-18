@@ -205,13 +205,14 @@ func main() {
 			wantErr: "'var' is prohibited inside blocks",
 		},
 		{
-			name: "Prohibited delete builtin",
+			name: "Allowed delete builtin (ImGo value-update form)",
 			code: `package main
 func main() {
     m := map[string]int{"a": 1}
-    delete(m, "a")
+    m1 := delete(m, "a")
+    println(m1)
 }`,
-			wantErr: "'delete' builtin is prohibited",
+			wantErr: "",
 		},
 		{
 			name: "Prohibited append builtin",

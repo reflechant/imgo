@@ -448,6 +448,64 @@ func main() {
 			},
 		},
 		{
+			name: "Builtin set/get/update/delete on map",
+			input: `package main
+func main() {
+    m := map[string]int{"a": 1}
+    m1 := set(m, "b", 2)
+    v := get(m1, "a")
+    m2 := update(m1, "a", func(x int) int { return x + 1 })
+    m3 := delete(m2, "b")
+    println(v, m3)
+}`,
+			expected: []string{
+				"m_1 := persistent.NewMap[string, int]().Set(\"a\", 1)",
+				"m1_1 := m_1.Set(\"b\", 2)",
+				"v_1 := m1_1.Get(\"a\")",
+				"m2_1 := m1_1.Update(\"a\", func(x int) int { return x + 1 })",
+				"m3_1 := m2_1.Delete(\"b\")",
+			},
+		},
+		{
+			name: "Builtin two-value get yields Lookup",
+			input: `package main
+func main() {
+    m := map[string]int{"a": 1}
+    v, ok := get(m, "a")
+    println(v, ok)
+}`,
+			expected: []string{
+				"v_1, ok_1 := m_1.Lookup(\"a\")",
+			},
+		},
+		{
+			name: "Builtin getIn chains Get; two-value form ends in Lookup",
+			input: `package main
+func main() {
+    m := map[string]map[string]int{"a": map[string]int{"b": 1}}
+    v := getIn(m, "a", "b")
+    v2, ok := getIn(m, "a", "b")
+    println(v, v2, ok)
+}`,
+			expected: []string{
+				"v_1 := m_1.Get(\"a\").Get(\"b\")",
+				"v2_1, ok_1 := m_1.Get(\"a\").Lookup(\"b\")",
+			},
+		},
+		{
+			name: "Builtin shadowed by local function is not rewritten",
+			input: `package main
+func main() {
+    set := func(m map[string]int, k string, v int) int { return v }
+    m := map[string]int{"a": 1}
+    x := set(m, "b", 2)
+    println(x)
+}`,
+			expected: []string{
+				"x_1 := set_1(m_1, \"b\", 2)",
+			},
+		},
+		{
 			name: "User struct with SetIn method is not rewritten",
 			input: `package main
 type S struct{ n int }

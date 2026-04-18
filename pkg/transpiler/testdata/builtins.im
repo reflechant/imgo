@@ -1,0 +1,53 @@
+package main
+
+import "fmt"
+
+func main() {
+	m := map[string]map[string]int{
+		"a": map[string]int{"b": 1},
+	}
+
+	m1 := set(m["a"], "c", 2)
+	fmt.Printf("set m[a][c]=2: %d\n", m1["c"])
+
+	v1 := get(m["a"], "b")
+	fmt.Printf("get m[a][b]: %d\n", v1)
+
+	v2, ok := get(m["a"], "missing")
+	fmt.Printf("get missing: v=%d ok=%v\n", v2, ok)
+
+	v3 := getIn(m, "a", "b")
+	fmt.Printf("getIn m[a][b]: %d\n", v3)
+
+	m2 := setIn(m, "a", "c", 2)
+	fmt.Printf("setIn m[a][c]=2: %d\n", m2["a"]["c"])
+
+	m3 := setIn(m, "x", "y", 3)
+	fmt.Printf("setIn new path m[x][y]=3: %d\n", m3["x"]["y"])
+
+	m4 := updateIn(m2, "a", "b", func(v int) int { return v + 10 })
+	fmt.Printf("updateIn m[a][b]+10: %d\n", m4["a"]["b"])
+
+	m5 := delete(m["a"], "b")
+	_, ok5 := get(m5, "b")
+	fmt.Printf("delete m[a][b]: ok=%v\n", ok5)
+
+	m6 := deleteIn(m2, "a", "b")
+	_, ok6 := get(m6["a"], "b")
+	fmt.Printf("deleteIn m[a][b]: ok=%v\n", ok6)
+
+	m7 := update(m["a"], "b", func(v int) int { return v * 100 })
+	fmt.Printf("update m[a][b]*100: %d\n", m7["b"])
+}
+
+// -- EXPECT --
+// set m[a][c]=2: 2
+// get m[a][b]: 1
+// get missing: v=0 ok=false
+// getIn m[a][b]: 1
+// setIn m[a][c]=2: 2
+// setIn new path m[x][y]=3: 3
+// updateIn m[a][b]+10: 11
+// delete m[a][b]: ok=false
+// deleteIn m[a][b]: ok=false
+// update m[a][b]*100: 100

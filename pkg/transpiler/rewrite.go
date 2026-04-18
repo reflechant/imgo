@@ -126,6 +126,14 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 				s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true, info, hasPersistent) // Pass true for wantTwoValues
 				goto processLHS
 			}
+			// v, ok := get(m, k)  (or getIn) — propagate the two-value flag
+			// so the builtin lowers to .Lookup instead of .Get.
+			if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
+				if id, ok := call.Fun.(*ast.Ident); ok && (id.Name == "get" || id.Name == "getIn") && !isShadowed(env, id.Name) {
+					s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true, info, hasPersistent)
+					goto processLHS
+				}
+			}
 		}
 
 		// Default processing
@@ -334,6 +342,20 @@ func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int
 	case *ast.MapType, *ast.ArrayType:
 		return rewriteType(e.(ast.Expr), hasPersistent)
 	case *ast.CallExpr:
+		// ImGo value-update builtins (set/get/update/delete and their *In
+		// forms). Translate to method-call shape and re-rewrite so the
+		// existing method-call lowering takes care of the rest. Names are
+		// only treated as builtins when not shadowed by a local binding
+		// and when the receiver is map-like (or unknown — fall back).
+		if ident, ok := e.Fun.(*ast.Ident); ok {
+			if imgoBuiltins[ident.Name] && len(e.Args) >= 2 && !isShadowed(env, ident.Name) {
+				if isMapLike(info, e.Args[0]) {
+					translated := expandMapBuiltin(ident.Name, e.Args, wantTwoValues, e.Pos())
+					return rewriteExpr(translated, env, versions, wantTwoValues, info, hasPersistent)
+				}
+			}
+		}
+
 		// Specialized handling for builtins
 		if ident, ok := e.Fun.(*ast.Ident); ok {
 			if ident.Name == "len" && len(e.Args) == 1 {
