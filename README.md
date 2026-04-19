@@ -14,6 +14,7 @@ ImGo is a **transpiler** that generates Go code from `.im` source files. It vali
 go build -o imgo ./cmd/imgo
 
 # 2. Transpile the examples (you can point ImGo to a directory or to a single file)
+# BTW, check out docs/tutorial.im
 ./imgo pkg/transpiler/testdata
 
 # 3. Run a generated example
