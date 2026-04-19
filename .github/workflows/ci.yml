@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build
+        run: go build -v -o imgo ./cmd/imgo
+
+      - name: Run Tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Check Coverage Gate (100% for Core)
+        run: |
+          REWRITE_COV=$(go tool cover -func=coverage.out | grep "rewrite.go" | awk '{print $NF}')
+          VALIDATOR_COV=$(go tool cover -func=coverage.out | grep "validator.go" | awk '{print $NF}')
+          echo "rewrite.go coverage: $REWRITE_COV"
+          echo "validator.go coverage: $VALIDATOR_COV"
+          if [[ "$REWRITE_COV" != "100.0%" ]] || [[ "$VALIDATOR_COV" != "100.0%" ]]; then
+            echo "ERROR: Core files must have 100.0% statement coverage."
+            exit 1
+          fi
+
+      - name: Upload Coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
