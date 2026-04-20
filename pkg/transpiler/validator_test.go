@@ -1,6 +1,7 @@
 package transpiler
 
 import (
+	"errors"
 	"go/parser"
 	"go/token"
 	"testing"
@@ -405,8 +406,8 @@ func main() {
 	if verr == nil {
 		t.Fatal("expected diagnostics, got nil")
 	}
-	ds, ok := verr.(Diagnostics)
-	if !ok {
+	var ds Diagnostics
+	if !errors.As(verr, &ds) {
 		t.Fatalf("expected Diagnostics, got %T", verr)
 	}
 	if len(ds) != 3 {

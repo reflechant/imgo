@@ -52,7 +52,7 @@ func expandMapBuiltin(name string, args []ast.Expr, wantTwoValues bool, pos toke
 	}
 
 	if name == "getIn" {
-		var res ast.Expr = receiver
+		res := receiver
 		for i, k := range rest {
 			method := "Get"
 			// Two-value form only applies to the final lookup of the chain.
@@ -93,7 +93,7 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 			Args: rest,
 		}, pos)
 	case "getIn":
-		var res ast.Expr = receiver
+		res := receiver
 		for _, k := range rest {
 			res = &ast.CallExpr{
 				Fun:  &ast.SelectorExpr{X: res, Sel: ast.NewIdent("Get")},
@@ -120,12 +120,13 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 // getIn(s, "A", "B")     -> s.A.B
 // update(s, "F", fn)     -> func(__s T) T { __s.F = fn(__s.F); return __s }(s)
 // updateIn(s, "A", "B", fn)
-//                        -> func(__s T) T {
-//                               __s.A = func(__a A) A {
-//                                   __a.B = fn(__a.B); return __a
-//                               }(__s.A)
-//                               return __s
-//                           }(s)
+//
+//	-> func(__s T) T {
+//	       __s.A = func(__a A) A {
+//	           __a.B = fn(__a.B); return __a
+//	       }(__s.A)
+//	       return __s
+//	   }(s)
 //
 // typeExpr is the AST form of the receiver's type (extracted from
 // *types.Info) needed to write the IIFE parameter type. When typeExpr is
@@ -144,7 +145,7 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 		return setPos(&ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(field)}, pos)
 
 	case "getIn":
-		var res ast.Expr = receiver
+		res := receiver
 		for _, key := range args[1:] {
 			field, ok := stringLitField(key)
 			if !ok {

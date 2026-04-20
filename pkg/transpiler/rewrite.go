@@ -7,35 +7,50 @@ import (
 	"go/types"
 )
 
+// rewriter threads the mutable state of an AST rewrite pass: the scoped
+// environment stack, the monotonic version counter for SSA-style mangling,
+// resolved type information, and a flag tracking whether any node in the
+// tree ended up needing the persistent package.
+type rewriter struct {
+	env           []map[string]string
+	versions      map[string]int
+	info          *types.Info
+	hasPersistent bool
+}
+
 func Rewrite(file *ast.File, info *types.Info) *ast.File {
-	hasPersistent := false
+	r := &rewriter{
+		versions: make(map[string]int),
+		info:     info,
+	}
+
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			if d.Type != nil {
 				if d.Type.Params != nil {
 					for _, field := range d.Type.Params.List {
-						field.Type = rewriteType(field.Type, &hasPersistent)
+						field.Type = r.typ(field.Type)
 					}
 				}
 				if d.Type.Results != nil {
 					for _, field := range d.Type.Results.List {
-						field.Type = rewriteType(field.Type, &hasPersistent)
+						field.Type = r.typ(field.Type)
 					}
 				}
 			}
-			env := []map[string]string{make(map[string]string)}
-			versions := make(map[string]int)
-			rewriteBlock(d.Body, env, versions, info, &hasPersistent)
+			r.env = []map[string]string{make(map[string]string)}
+			r.block(d.Body)
 		case *ast.GenDecl:
 			if d.Tok == token.VAR {
+				r.env = nil
 				for _, spec := range d.Specs {
 					if vs, ok := spec.(*ast.ValueSpec); ok {
 						if vs.Type != nil {
-							vs.Type = rewriteType(vs.Type, &hasPersistent)
+							vs.Type = r.typ(vs.Type)
 						}
 						for i, val := range vs.Values {
-							vs.Values[i] = rewriteExpr(val, nil, make(map[string]int), false, info, &hasPersistent)
+							vs.Values[i] = r.expr(val, false)
 						}
 					}
 				}
@@ -43,11 +58,95 @@ func Rewrite(file *ast.File, info *types.Info) *ast.File {
 		}
 	}
 
-	if hasPersistent {
+	if r.hasPersistent {
 		addPersistentImport(file)
 	}
 
 	return file
+}
+
+func (r *rewriter) push() {
+	r.env = append(r.env, make(map[string]string))
+}
+
+func (r *rewriter) pop() {
+	r.env = r.env[:len(r.env)-1]
+}
+
+func (r *rewriter) scoped(fn func()) {
+	r.push()
+	fn()
+	r.pop()
+}
+
+// define introduces a fresh binding for name in the top frame and returns
+// the mangled form. "_" is passed through without bumping the version.
+func (r *rewriter) define(name string) string {
+	if name == "_" {
+		return name
+	}
+	r.versions[name]++
+	mangled := fmt.Sprintf("%s_%d", name, r.versions[name])
+	r.env[len(r.env)-1][name] = mangled
+	return mangled
+}
+
+// lookup resolves name to its latest mangled form by walking the scope
+// stack bottom-up. Reports whether a binding was found.
+func (r *rewriter) lookup(name string) (string, bool) {
+	for i := len(r.env) - 1; i >= 0; i-- {
+		if m, ok := r.env[i][name]; ok {
+			return m, true
+		}
+	}
+	return "", false
+}
+
+// methodCall builds recv.name(args...). No position information is set;
+// callers that care wrap the result in setPos.
+func methodCall(recv ast.Expr, name string, args ...ast.Expr) *ast.CallExpr {
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: recv, Sel: ast.NewIdent(name)},
+		Args: args,
+	}
+}
+
+// persistentSel builds the selector `persistent.Name` and pins pos onto the
+// persistent identifier so downstream printers emit sensible locations.
+func persistentSel(name string, pos token.Pos) *ast.SelectorExpr {
+	return &ast.SelectorExpr{
+		X:   setPos(ast.NewIdent("persistent"), pos),
+		Sel: ast.NewIdent(name),
+	}
+}
+
+// persistentGeneric builds `persistent.Name[Idx0, Idx1, ...]`. Used both
+// for generic types (Map, List) and generic constructors (NewMap, NewList).
+func persistentGeneric(name string, indices []ast.Expr, pos token.Pos) ast.Expr {
+	return setPos(&ast.IndexListExpr{
+		X:       persistentSel(name, pos),
+		Indices: indices,
+		Lbrack:  pos,
+	}, pos)
+}
+
+// expandInChain lowers SetIn/UpdateIn/DeleteIn into a nested Set(..., Get(...))
+// chain. keys carries the full path including the innermost key. tail is
+// invoked once on the innermost receiver and its key to construct the
+// bottom-level operation (Set / Update / Delete); outer levels are always
+// wrapped in Set(key, ...).
+func expandInChain(recv ast.Expr, keys []ast.Expr, tail func(x, k ast.Expr) ast.Expr) ast.Expr {
+	targets := make([]ast.Expr, len(keys))
+	targets[0] = recv
+	for i := 1; i < len(keys); i++ {
+		targets[i] = methodCall(targets[i-1], "Get", keys[i-1])
+	}
+	n := len(keys)
+	res := tail(targets[n-1], keys[n-1])
+	for i := n - 2; i >= 0; i-- {
+		res = methodCall(targets[i], "Set", keys[i], res)
+	}
+	return res
 }
 
 func addPersistentImport(file *ast.File) {
@@ -69,223 +168,172 @@ func addPersistentImport(file *ast.File) {
 		}
 	}
 
-	newDecl := &ast.GenDecl{
+	file.Decls = append([]ast.Decl{&ast.GenDecl{
 		Tok:   token.IMPORT,
 		Specs: []ast.Spec{newImport},
-	}
-	file.Decls = append([]ast.Decl{newDecl}, file.Decls...)
+	}}, file.Decls...)
 }
 
-func rewriteType(typ ast.Expr, hasPersistent *bool) ast.Expr {
+func (r *rewriter) typ(typ ast.Expr) ast.Expr {
 	if typ == nil {
 		return nil
 	}
 	switch t := typ.(type) {
 	case *ast.MapType:
-		*hasPersistent = true
-		return setPos(&ast.IndexListExpr{
-			X: &ast.SelectorExpr{
-				X:   setPos(ast.NewIdent("persistent"), t.Pos()),
-				Sel: ast.NewIdent("Map"),
-			},
-			Indices: []ast.Expr{rewriteType(t.Key, hasPersistent), rewriteType(t.Value, hasPersistent)},
-			Lbrack:  t.Pos(),
-		}, t.Pos())
+		r.hasPersistent = true
+		return persistentGeneric("Map", []ast.Expr{r.typ(t.Key), r.typ(t.Value)}, t.Pos())
 	case *ast.ArrayType:
 		if t.Len == nil {
-			*hasPersistent = true
-			return setPos(&ast.IndexListExpr{
-				X: &ast.SelectorExpr{
-					X:   setPos(ast.NewIdent("persistent"), t.Pos()),
-					Sel: ast.NewIdent("List"),
-				},
-				Indices: []ast.Expr{rewriteType(t.Elt, hasPersistent)},
-				Lbrack:  t.Pos(),
-			}, t.Pos())
+			r.hasPersistent = true
+			return persistentGeneric("List", []ast.Expr{r.typ(t.Elt)}, t.Pos())
 		}
 	}
 	return typ
 }
 
-func rewriteBlock(block *ast.BlockStmt, env []map[string]string, versions map[string]int, info *types.Info, hasPersistent *bool) {
-	if block == nil {
+// block iterates stmt-by-stmt without creating a new scope; callers are
+// responsible for scope management. stmt() handles lone BlockStmt by
+// pushing a frame and delegating to block().
+func (r *rewriter) block(b *ast.BlockStmt) {
+	if b == nil {
 		return
 	}
-
-	for i, stmt := range block.List {
-		block.List[i] = rewriteStmt(stmt, env, versions, info, hasPersistent)
+	for i, stmt := range b.List {
+		b.List[i] = r.stmt(stmt)
 	}
 }
 
-func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int, info *types.Info, hasPersistent *bool) ast.Stmt {
+// defineIdent mangles an Ident in place when it's a real (non-blank) name.
+func (r *rewriter) defineIdent(e ast.Expr) ast.Expr {
+	ident, ok := e.(*ast.Ident)
+	if !ok || ident.Name == "_" {
+		return e
+	}
+	return &ast.Ident{Name: r.define(ident.Name), NamePos: ident.Pos()}
+}
+
+func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
-		// Specialized check for 2-value indexing context: v, ok := m[k]
+		wantTwo := false
 		if len(s.Lhs) == 2 && len(s.Rhs) == 1 {
 			if _, ok := s.Rhs[0].(*ast.IndexExpr); ok {
-				s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true, info, hasPersistent) // Pass true for wantTwoValues
-				goto processLHS
-			}
-			// v, ok := get(m, k)  (or getIn) — propagate the two-value flag
-			// so the builtin lowers to .Lookup instead of .Get.
-			if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
-				if id, ok := call.Fun.(*ast.Ident); ok && (id.Name == "get" || id.Name == "getIn") && !isShadowed(env, id.Name) {
-					s.Rhs[0] = rewriteExpr(s.Rhs[0], env, versions, true, info, hasPersistent)
-					goto processLHS
+				wantTwo = true
+			} else if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
+				if id, ok := call.Fun.(*ast.Ident); ok && (id.Name == "get" || id.Name == "getIn") && !isShadowed(r.env, id.Name) {
+					wantTwo = true
 				}
 			}
 		}
-
-		// Default processing
-		for j, expr := range s.Rhs {
-			s.Rhs[j] = rewriteExpr(expr, env, versions, false, info, hasPersistent)
-		}
-
-	processLHS:
-		if s.Tok == token.DEFINE {
-			newNames := make([]ast.Expr, len(s.Lhs))
-			for j, lhs := range s.Lhs {
-				if ident, ok := lhs.(*ast.Ident); ok {
-					if ident.Name == "_" {
-						newNames[j] = ident
-						continue
-					}
-					versions[ident.Name]++
-					count := versions[ident.Name]
-					mangled := fmt.Sprintf("%s_%d", ident.Name, count)
-					env[len(env)-1][ident.Name] = mangled
-					newNames[j] = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
-				} else {
-					newNames[j] = lhs
-				}
-			}
-			s.Lhs = newNames
+		if wantTwo {
+			s.Rhs[0] = r.expr(s.Rhs[0], true)
 		} else {
-			// Even for non-DEFINE, rewrite identifiers on LHS to latest versions
+			for j, expr := range s.Rhs {
+				s.Rhs[j] = r.expr(expr, false)
+			}
+		}
+
+		if s.Tok == token.DEFINE {
 			for j, lhs := range s.Lhs {
-				s.Lhs[j] = rewriteExpr(lhs, env, versions, false, info, hasPersistent)
+				s.Lhs[j] = r.defineIdent(lhs)
+			}
+		} else {
+			for j, lhs := range s.Lhs {
+				s.Lhs[j] = r.expr(lhs, false)
 			}
 		}
 		return s
 
 	case *ast.ExprStmt:
-		s.X = rewriteExpr(s.X, env, versions, false, info, hasPersistent)
+		s.X = r.expr(s.X, false)
 		return s
 	case *ast.ReturnStmt:
 		for i, expr := range s.Results {
-			s.Results[i] = rewriteExpr(expr, env, versions, false, info, hasPersistent)
+			s.Results[i] = r.expr(expr, false)
 		}
 		return s
 	case *ast.BlockStmt:
-		newEnv := make([]map[string]string, len(env))
-		copy(newEnv, env)
-		newEnv = append(newEnv, make(map[string]string))
-		rewriteBlock(s, newEnv, versions, info, hasPersistent)
+		r.scoped(func() { r.block(s) })
 		return s
 	case *ast.IfStmt:
-		newEnv := make([]map[string]string, len(env))
-		copy(newEnv, env)
-		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil {
-			s.Init = rewriteStmt(s.Init, newEnv, versions, info, hasPersistent)
-		}
-		s.Cond = rewriteExpr(s.Cond, newEnv, versions, false, info, hasPersistent)
-		rewriteBlock(s.Body, newEnv, versions, info, hasPersistent)
-		if s.Else != nil {
-			if els, ok := s.Else.(*ast.BlockStmt); ok {
-				elseEnv := make([]map[string]string, len(newEnv))
-				copy(elseEnv, newEnv)
-				elseEnv = append(elseEnv, make(map[string]string))
-				rewriteBlock(els, elseEnv, versions, info, hasPersistent)
-			} else {
-				s.Else = rewriteStmt(s.Else, newEnv, versions, info, hasPersistent)
+		r.scoped(func() {
+			if s.Init != nil {
+				s.Init = r.stmt(s.Init)
 			}
-		}
+			s.Cond = r.expr(s.Cond, false)
+			r.block(s.Body)
+			if s.Else != nil {
+				if els, ok := s.Else.(*ast.BlockStmt); ok {
+					r.scoped(func() { r.block(els) })
+				} else {
+					s.Else = r.stmt(s.Else)
+				}
+			}
+		})
 		return s
 	case *ast.ForStmt:
-		newEnv := make([]map[string]string, len(env))
-		copy(newEnv, env)
-		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil {
-			s.Init = rewriteStmt(s.Init, newEnv, versions, info, hasPersistent)
-		}
-		if s.Cond != nil {
-			s.Cond = rewriteExpr(s.Cond, newEnv, versions, false, info, hasPersistent)
-		}
-		if s.Post != nil {
-			s.Post = rewriteStmt(s.Post, newEnv, versions, info, hasPersistent)
-		}
-		rewriteBlock(s.Body, newEnv, versions, info, hasPersistent)
+		r.scoped(func() {
+			if s.Init != nil {
+				s.Init = r.stmt(s.Init)
+			}
+			if s.Cond != nil {
+				s.Cond = r.expr(s.Cond, false)
+			}
+			if s.Post != nil {
+				s.Post = r.stmt(s.Post)
+			}
+			r.block(s.Body)
+		})
 		return s
 	case *ast.RangeStmt:
-		s.X = rewriteExpr(s.X, env, versions, false, info, hasPersistent)
+		s.X = r.expr(s.X, false)
 		// Desugar 'range x' to 'range x.All()'
-		s.X = &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   s.X,
-				Sel: ast.NewIdent("All"),
-			},
-		}
-		bodyEnv := make([]map[string]string, len(env))
-		copy(bodyEnv, env)
-		bodyEnv = append(bodyEnv, make(map[string]string))
-
-		if s.Tok == token.DEFINE {
-			if ident, ok := s.Key.(*ast.Ident); ok && ident.Name != "_" {
-				versions[ident.Name]++
-				mangled := fmt.Sprintf("%s_%d", ident.Name, versions[ident.Name])
-				bodyEnv[len(bodyEnv)-1][ident.Name] = mangled
-				s.Key = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
+		s.X = methodCall(s.X, "All")
+		r.scoped(func() {
+			if s.Tok == token.DEFINE {
+				s.Key = r.defineIdent(s.Key)
+				s.Value = r.defineIdent(s.Value)
+			} else {
+				if s.Key != nil {
+					s.Key = r.expr(s.Key, false)
+				}
+				if s.Value != nil {
+					s.Value = r.expr(s.Value, false)
+				}
 			}
-			if ident, ok := s.Value.(*ast.Ident); ok && ident.Name != "_" {
-				versions[ident.Name]++
-				mangled := fmt.Sprintf("%s_%d", ident.Name, versions[ident.Name])
-				bodyEnv[len(bodyEnv)-1][ident.Name] = mangled
-				s.Value = &ast.Ident{Name: mangled, NamePos: ident.Pos()}
-			}
-		} else {
-			if s.Key != nil {
-				s.Key = rewriteExpr(s.Key, env, versions, false, info, hasPersistent)
-			}
-			if s.Value != nil {
-				s.Value = rewriteExpr(s.Value, env, versions, false, info, hasPersistent)
-			}
-		}
-
-		rewriteBlock(s.Body, bodyEnv, versions, info, hasPersistent)
+			r.block(s.Body)
+		})
 		return s
 	case *ast.SwitchStmt:
-		newEnv := make([]map[string]string, len(env))
-		copy(newEnv, env)
-		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil {
-			s.Init = rewriteStmt(s.Init, newEnv, versions, info, hasPersistent)
-		}
-		if s.Tag != nil {
-			s.Tag = rewriteExpr(s.Tag, newEnv, versions, false, info, hasPersistent)
-		}
-		rewriteBlock(s.Body, newEnv, versions, info, hasPersistent)
+		r.scoped(func() {
+			if s.Init != nil {
+				s.Init = r.stmt(s.Init)
+			}
+			if s.Tag != nil {
+				s.Tag = r.expr(s.Tag, false)
+			}
+			r.block(s.Body)
+		})
 		return s
 	case *ast.TypeSwitchStmt:
-		newEnv := make([]map[string]string, len(env))
-		copy(newEnv, env)
-		newEnv = append(newEnv, make(map[string]string))
-		if s.Init != nil {
-			s.Init = rewriteStmt(s.Init, newEnv, versions, info, hasPersistent)
-		}
-		s.Assign = rewriteStmt(s.Assign, newEnv, versions, info, hasPersistent)
-		rewriteBlock(s.Body, newEnv, versions, info, hasPersistent)
+		r.scoped(func() {
+			if s.Init != nil {
+				s.Init = r.stmt(s.Init)
+			}
+			s.Assign = r.stmt(s.Assign)
+			r.block(s.Body)
+		})
 		return s
 	case *ast.CaseClause:
 		for i, expr := range s.List {
-			s.List[i] = rewriteExpr(expr, env, versions, false, info, hasPersistent)
+			s.List[i] = r.expr(expr, false)
 		}
 		for i, st := range s.Body {
-			s.Body[i] = rewriteStmt(st, env, versions, info, hasPersistent)
+			s.Body[i] = r.stmt(st)
 		}
 		return s
 	case *ast.DeferStmt:
-		if rewritten, ok := rewriteExpr(s.Call, env, versions, false, info, hasPersistent).(*ast.CallExpr); ok {
+		if rewritten, ok := r.expr(s.Call, false).(*ast.CallExpr); ok {
 			s.Call = rewritten
 		}
 		return s
@@ -294,17 +342,13 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 			for _, spec := range d.Specs {
 				if vs, ok := spec.(*ast.ValueSpec); ok {
 					for i, name := range vs.Names {
-						versions[name.Name]++
-						count := versions[name.Name]
-						mangled := fmt.Sprintf("%s_%d", name.Name, count)
-						env[len(env)-1][name.Name] = mangled
-						vs.Names[i] = &ast.Ident{Name: mangled, NamePos: name.Pos()}
+						vs.Names[i] = &ast.Ident{Name: r.define(name.Name), NamePos: name.Pos()}
 					}
 					if vs.Type != nil {
-						vs.Type = rewriteType(vs.Type, hasPersistent)
+						vs.Type = r.typ(vs.Type)
 					}
 					for i, val := range vs.Values {
-						vs.Values[i] = rewriteExpr(val, env, versions, false, info, hasPersistent)
+						vs.Values[i] = r.expr(val, false)
 					}
 				}
 			}
@@ -314,337 +358,211 @@ func rewriteStmt(stmt ast.Stmt, env []map[string]string, versions map[string]int
 	return stmt
 }
 
-func rewriteExpr(expr ast.Expr, env []map[string]string, versions map[string]int, wantTwoValues bool, info *types.Info, hasPersistent *bool) ast.Expr {
+func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) ast.Expr {
 	if expr == nil {
 		return nil
 	}
 
 	switch e := expr.(type) {
 	case *ast.Ident:
-		if env != nil {
-			for i := len(env) - 1; i >= 0; i-- {
-				if mangled, ok := env[i][e.Name]; ok {
-					return &ast.Ident{Name: mangled, NamePos: e.Pos()}
-				}
+		if r.env != nil {
+			if mangled, ok := r.lookup(e.Name); ok {
+				return &ast.Ident{Name: mangled, NamePos: e.Pos()}
 			}
 		}
 		return e
 	case *ast.BinaryExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, info, hasPersistent)
-		e.Y = rewriteExpr(e.Y, env, versions, false, info, hasPersistent)
+		e.X = r.expr(e.X, false)
+		e.Y = r.expr(e.Y, false)
 		return e
 	case *ast.UnaryExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, info, hasPersistent)
+		e.X = r.expr(e.X, false)
 		return e
 	case *ast.StarExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, info, hasPersistent)
+		e.X = r.expr(e.X, false)
 		return e
 	case *ast.MapType, *ast.ArrayType:
-		return rewriteType(e.(ast.Expr), hasPersistent)
+		return r.typ(e)
 	case *ast.CallExpr:
-		// ImGo value-update builtins (set/get/update/delete and their *In
-		// forms). Dispatch on the receiver's static type:
-		//   - struct: lower get/getIn to selector chains; lower
-		//     update/updateIn to an IIFE that copies the struct and
-		//     overwrites the field.
-		//   - list (slice): translate to method-call shape using
-		//     persistent.List's .Set/.Get; In-forms reuse the existing
-		//     map In expansion below.
-		//   - map (or unknown): translate to method-call shape and
-		//     reuse the existing map lowering.
-		// Builtin recognition is suppressed when the name is shadowed
-		// by a local binding (Go's own len/append shadowing rule).
-		if ident, ok := e.Fun.(*ast.Ident); ok {
-			if imgoBuiltins[ident.Name] && len(e.Args) >= 2 && !isShadowed(env, ident.Name) {
-				if isStructLike(info, e.Args[0]) {
-					typeExpr := typeExprFor(typeOf(info, e.Args[0]))
-					if expanded := expandStructBuiltin(ident.Name, e.Args, typeExpr, e.Pos()); expanded != nil {
-						return rewriteExpr(expanded, env, versions, wantTwoValues, info, hasPersistent)
-					}
-				}
-				if isListLike(info, e.Args[0]) || isArrayLike(info, e.Args[0]) {
-					if expanded := expandListBuiltin(ident.Name, e.Args, e.Pos()); expanded != nil {
-						return rewriteExpr(expanded, env, versions, wantTwoValues, info, hasPersistent)
-					}
-				}
-				if isMapLike(info, e.Args[0]) {
-					translated := expandMapBuiltin(ident.Name, e.Args, wantTwoValues, e.Pos())
-					return rewriteExpr(translated, env, versions, wantTwoValues, info, hasPersistent)
-				}
-			}
-		}
-
-		// Specialized handling for builtins
-		if ident, ok := e.Fun.(*ast.Ident); ok {
-			if ident.Name == "len" && len(e.Args) == 1 {
-				*hasPersistent = true
-				return setPos(&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
-						Sel: ast.NewIdent("Len"),
-					},
-					Args: []ast.Expr{rewriteExpr(e.Args[0], env, versions, false, info, hasPersistent)},
-				}, e.Pos())
-			}
-			if ident.Name == "make" && len(e.Args) >= 1 {
-				switch typ := e.Args[0].(type) {
-				case *ast.MapType:
-					*hasPersistent = true
-					return setPos(&ast.CallExpr{
-						Fun: &ast.IndexListExpr{
-							X: &ast.SelectorExpr{
-								X:   setPos(ast.NewIdent("persistent"), e.Pos()),
-								Sel: ast.NewIdent("NewMap"),
-							},
-							Indices: []ast.Expr{rewriteType(typ.Key, hasPersistent), rewriteType(typ.Value, hasPersistent)},
-						},
-					}, e.Pos())
-				case *ast.ArrayType:
-					if typ.Len == nil {
-						*hasPersistent = true
-						return setPos(&ast.CallExpr{
-							Fun: &ast.IndexListExpr{
-								X: &ast.SelectorExpr{
-									X:   setPos(ast.NewIdent("persistent"), e.Pos()),
-									Sel: ast.NewIdent("NewList"),
-								},
-								Indices: []ast.Expr{rewriteType(typ.Elt, hasPersistent)},
-							},
-						}, e.Pos())
-					}
-				}
-			}
-		}
-
-		// Capture the receiver before recursive rewriting, since the
-		// child rewrite may replace sel.X with a freshly-mangled ident
-		// that has no entry in info.
-		var origReceiver ast.Expr
-		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
-			origReceiver = sel.X
-		}
-
-		e.Fun = rewriteExpr(e.Fun, env, versions, false, info, hasPersistent)
-		for i, arg := range e.Args {
-			e.Args[i] = rewriteExpr(arg, env, versions, false, info, hasPersistent)
-		}
-
-		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
-			// m.Set(k, v) -> m.Set(k, v)
-			if sel.Sel.Name == "Set" || sel.Sel.Name == "Append" || sel.Sel.Name == "Delete" {
-				return e
-			}
-			// SetIn / UpdateIn / DeleteIn only apply to map-typed receivers.
-			// When type info shows the receiver is some other type (e.g. a
-			// user struct that happens to define a method by the same name),
-			// leave the call alone.
-			if !isMapLike(info, origReceiver) {
-				return e
-			}
-			if sel.Sel.Name == "SetIn" {
-				N := len(e.Args) - 1
-				targets := make([]ast.Expr, N)
-				targets[0] = sel.X
-				for i := 1; i < N; i++ {
-					targets[i] = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   targets[i-1],
-							Sel: ast.NewIdent("Get"),
-						},
-						Args: []ast.Expr{e.Args[i-1]},
-					}
-				}
-				var res = e.Args[N]
-				for i := N - 1; i >= 0; i-- {
-					res = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   targets[i],
-							Sel: ast.NewIdent("Set"),
-						},
-						Args: []ast.Expr{e.Args[i], res},
-					}
-				}
-				return setPos(res, e.Pos())
-			}
-			if sel.Sel.Name == "UpdateIn" {
-				N := len(e.Args) - 1
-				targets := make([]ast.Expr, N)
-				targets[0] = sel.X
-				for i := 1; i < N; i++ {
-					targets[i] = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   targets[i-1],
-							Sel: ast.NewIdent("Get"),
-						},
-						Args: []ast.Expr{e.Args[i-1]},
-					}
-				}
-				var res = &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   targets[N-1],
-						Sel: ast.NewIdent("Update"),
-					},
-					Args: []ast.Expr{e.Args[N-1], e.Args[N]},
-				}
-				for i := N - 2; i >= 0; i-- {
-					res = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   targets[i],
-							Sel: ast.NewIdent("Set"),
-						},
-						Args: []ast.Expr{e.Args[i], res},
-					}
-				}
-				return setPos(res, e.Pos())
-			}
-			if sel.Sel.Name == "DeleteIn" {
-				N := len(e.Args)
-				targets := make([]ast.Expr, N)
-				targets[0] = sel.X
-				for i := 1; i < N; i++ {
-					targets[i] = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   targets[i-1],
-							Sel: ast.NewIdent("Get"),
-						},
-						Args: []ast.Expr{e.Args[i-1]},
-					}
-				}
-				var res = &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   targets[N-1],
-						Sel: ast.NewIdent("Delete"),
-					},
-					Args: []ast.Expr{e.Args[N-1]},
-				}
-				for i := N - 2; i >= 0; i-- {
-					res = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   targets[i],
-							Sel: ast.NewIdent("Set"),
-						},
-						Args: []ast.Expr{e.Args[i], res},
-					}
-				}
-				return setPos(res, e.Pos())
-			}
-		}
-		return e
+		return r.callExpr(e, wantTwoValues)
 	case *ast.SelectorExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, info, hasPersistent)
+		e.X = r.expr(e.X, false)
 		return e
 	case *ast.IndexExpr:
 		method := "Get"
 		if wantTwoValues {
 			method = "Lookup"
 		}
-		return setPos(&ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   rewriteExpr(e.X, env, versions, false, info, hasPersistent),
-				Sel: ast.NewIdent(method),
-			},
-			Args: []ast.Expr{rewriteExpr(e.Index, env, versions, false, info, hasPersistent)},
-		}, e.Pos())
+		return setPos(methodCall(r.expr(e.X, false), method, r.expr(e.Index, false)), e.Pos())
 	case *ast.CompositeLit:
 		if mt, ok := e.Type.(*ast.MapType); ok {
-			*hasPersistent = true
-			var res = setPos(&ast.CallExpr{
-				Fun: &ast.IndexListExpr{
-					X: &ast.SelectorExpr{
-						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
-						Sel: ast.NewIdent("NewMap"),
-					},
-					Indices: []ast.Expr{rewriteType(mt.Key, hasPersistent), rewriteType(mt.Value, hasPersistent)},
-				},
+			r.hasPersistent = true
+			res := setPos(&ast.CallExpr{
+				Fun: persistentGeneric("NewMap", []ast.Expr{r.typ(mt.Key), r.typ(mt.Value)}, e.Pos()),
 			}, e.Pos())
 			for _, el := range e.Elts {
 				if kv, ok := el.(*ast.KeyValueExpr); ok {
-					res = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X:   res,
-							Sel: ast.NewIdent("Set"),
-						},
-						Args: []ast.Expr{rewriteExpr(kv.Key, env, versions, false, info, hasPersistent), rewriteExpr(kv.Value, env, versions, false, info, hasPersistent)},
-					}
+					res = methodCall(res, "Set", r.expr(kv.Key, false), r.expr(kv.Value, false))
 				}
 			}
 			return res
 		}
 		if st, ok := e.Type.(*ast.ArrayType); ok && st.Len == nil {
-			*hasPersistent = true
-			var res = setPos(&ast.CallExpr{
-				Fun: &ast.IndexListExpr{
-					X: &ast.SelectorExpr{
-						X:   setPos(ast.NewIdent("persistent"), e.Pos()),
-						Sel: ast.NewIdent("NewList"),
-					},
-					Indices: []ast.Expr{rewriteType(st.Elt, hasPersistent)},
-				},
+			r.hasPersistent = true
+			res := setPos(&ast.CallExpr{
+				Fun: persistentGeneric("NewList", []ast.Expr{r.typ(st.Elt)}, e.Pos()),
 			}, e.Pos())
 			for _, el := range e.Elts {
-				res = &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   res,
-						Sel: ast.NewIdent("Append"),
-					},
-					Args: []ast.Expr{rewriteExpr(el, env, versions, false, info, hasPersistent)},
-				}
+				res = methodCall(res, "Append", r.expr(el, false))
 			}
 			return res
 		}
 		// General case (e.g. Structs)
 		for i, el := range e.Elts {
 			if kv, ok := el.(*ast.KeyValueExpr); ok {
-				kv.Value = rewriteExpr(kv.Value, env, versions, false, info, hasPersistent)
+				kv.Value = r.expr(kv.Value, false)
 			} else {
-				e.Elts[i] = rewriteExpr(el, env, versions, false, info, hasPersistent)
+				e.Elts[i] = r.expr(el, false)
 			}
 		}
 		return e
 	case *ast.FuncLit:
-		newEnv := make([]map[string]string, len(env))
-		copy(newEnv, env)
-		newEnv = append(newEnv, make(map[string]string))
-		rewriteBlock(e.Body, newEnv, versions, info, hasPersistent)
+		r.scoped(func() { r.block(e.Body) })
 		return e
 	case *ast.ParenExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, info, hasPersistent)
+		e.X = r.expr(e.X, false)
 		return e
 	case *ast.SliceExpr:
-		*hasPersistent = true
-		x := rewriteExpr(e.X, env, versions, false, info, hasPersistent)
-		var low ast.Expr
+		r.hasPersistent = true
+		x := r.expr(e.X, false)
+		var low, high ast.Expr
 		if e.Low != nil {
-			low = rewriteExpr(e.Low, env, versions, false, info, hasPersistent)
+			low = r.expr(e.Low, false)
 		} else {
 			low = &ast.BasicLit{Kind: token.INT, Value: "0"}
 		}
-		var high ast.Expr
 		if e.High != nil {
-			high = rewriteExpr(e.High, env, versions, false, info, hasPersistent)
+			high = r.expr(e.High, false)
 		} else {
-			high = &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   ast.NewIdent("persistent"),
-					Sel: ast.NewIdent("Len"),
-				},
-				Args: []ast.Expr{x},
-			}
+			high = &ast.CallExpr{Fun: persistentSel("Len", token.NoPos), Args: []ast.Expr{x}}
 		}
 		return setPos(&ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   setPos(ast.NewIdent("persistent"), e.Pos()),
-				Sel: ast.NewIdent("Slice"),
-			},
+			Fun:  persistentSel("Slice", e.Pos()),
 			Args: []ast.Expr{x, low, high},
 		}, e.Pos())
 	case *ast.TypeAssertExpr:
-		e.X = rewriteExpr(e.X, env, versions, false, info, hasPersistent)
-		e.Type = rewriteType(e.Type, hasPersistent)
+		e.X = r.expr(e.X, false)
+		e.Type = r.typ(e.Type)
 		return e
 	}
 
 	return expr
+}
+
+// callExpr handles the CallExpr branch of expr(). ImGo-specific lowerings
+// fire here: value-update builtins (set/get/update/delete, *In forms),
+// len/make specialisation, and method-call expansion for SetIn/UpdateIn/
+// DeleteIn on persistent maps.
+func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) ast.Expr {
+	// ImGo value-update builtins (set/get/update/delete and their *In
+	// forms). Dispatch on the receiver's static type:
+	//   - struct: lower get/getIn to selector chains; lower update/updateIn
+	//     to an IIFE that copies the struct and overwrites the field.
+	//   - list (slice): translate to method-call shape using persistent.List's
+	//     .Set/.Get; In-forms reuse the existing map In expansion below.
+	//   - map (or unknown): translate to method-call shape and reuse the
+	//     existing map lowering.
+	// Builtin recognition is suppressed when the name is shadowed by a local
+	// binding (Go's own len/append shadowing rule).
+	if ident, ok := e.Fun.(*ast.Ident); ok {
+		if imgoBuiltins[ident.Name] && len(e.Args) >= 2 && !isShadowed(r.env, ident.Name) {
+			if isStructLike(r.info, e.Args[0]) {
+				typeExpr := typeExprFor(typeOf(r.info, e.Args[0]))
+				if expanded := expandStructBuiltin(ident.Name, e.Args, typeExpr, e.Pos()); expanded != nil {
+					return r.expr(expanded, wantTwoValues)
+				}
+			}
+			if isListLike(r.info, e.Args[0]) || isArrayLike(r.info, e.Args[0]) {
+				if expanded := expandListBuiltin(ident.Name, e.Args, e.Pos()); expanded != nil {
+					return r.expr(expanded, wantTwoValues)
+				}
+			}
+			if isMapLike(r.info, e.Args[0]) {
+				return r.expr(expandMapBuiltin(ident.Name, e.Args, wantTwoValues, e.Pos()), wantTwoValues)
+			}
+		}
+
+		if ident.Name == "len" && len(e.Args) == 1 {
+			r.hasPersistent = true
+			return setPos(&ast.CallExpr{
+				Fun:  persistentSel("Len", e.Pos()),
+				Args: []ast.Expr{r.expr(e.Args[0], false)},
+			}, e.Pos())
+		}
+		if ident.Name == "make" && len(e.Args) >= 1 {
+			switch typ := e.Args[0].(type) {
+			case *ast.MapType:
+				r.hasPersistent = true
+				return setPos(&ast.CallExpr{
+					Fun: persistentGeneric("NewMap", []ast.Expr{r.typ(typ.Key), r.typ(typ.Value)}, e.Pos()),
+				}, e.Pos())
+			case *ast.ArrayType:
+				if typ.Len == nil {
+					r.hasPersistent = true
+					return setPos(&ast.CallExpr{
+						Fun: persistentGeneric("NewList", []ast.Expr{r.typ(typ.Elt)}, e.Pos()),
+					}, e.Pos())
+				}
+			}
+		}
+	}
+
+	// Capture the receiver before recursive rewriting, since the child
+	// rewrite may replace sel.X with a freshly-mangled ident that has no
+	// entry in info.
+	var origReceiver ast.Expr
+	if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+		origReceiver = sel.X
+	}
+
+	e.Fun = r.expr(e.Fun, false)
+	for i, arg := range e.Args {
+		e.Args[i] = r.expr(arg, false)
+	}
+
+	sel, isSel := e.Fun.(*ast.SelectorExpr)
+	if !isSel {
+		return e
+	}
+	switch sel.Sel.Name {
+	case "Set", "Append", "Delete":
+		return e
+	}
+	// SetIn / UpdateIn / DeleteIn only apply to map-typed receivers. When
+	// type info shows the receiver is some other type (e.g. a user struct
+	// that defines a method by the same name), leave the call alone.
+	if !isMapLike(r.info, origReceiver) {
+		return e
+	}
+	switch sel.Sel.Name {
+	case "SetIn":
+		keys := e.Args[:len(e.Args)-1]
+		value := e.Args[len(e.Args)-1]
+		return setPos(expandInChain(sel.X, keys, func(x, k ast.Expr) ast.Expr {
+			return methodCall(x, "Set", k, value)
+		}), e.Pos())
+	case "UpdateIn":
+		keys := e.Args[:len(e.Args)-1]
+		fn := e.Args[len(e.Args)-1]
+		return setPos(expandInChain(sel.X, keys, func(x, k ast.Expr) ast.Expr {
+			return methodCall(x, "Update", k, fn)
+		}), e.Pos())
+	case "DeleteIn":
+		return setPos(expandInChain(sel.X, e.Args, func(x, k ast.Expr) ast.Expr {
+			return methodCall(x, "Delete", k)
+		}), e.Pos())
+	}
+	return e
 }
 
 func setPos(n ast.Expr, pos token.Pos) ast.Expr {
