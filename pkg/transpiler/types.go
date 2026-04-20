@@ -5,6 +5,7 @@ import (
 	"go/importer"
 	"go/token"
 	"go/types"
+	"strconv"
 )
 
 // typeCheck runs go/types over file on a best-effort basis. Errors are
@@ -118,6 +119,23 @@ func typeExprFor(t types.Type) ast.Expr {
 			return nil
 		}
 		return &ast.StarExpr{X: inner}
+	case *types.Array:
+		inner := typeExprFor(tt.Elem())
+		if inner == nil {
+			return nil
+		}
+		return &ast.ArrayType{
+			Len: &ast.BasicLit{Kind: token.INT, Value: strconv.FormatInt(tt.Len(), 10)},
+			Elt: inner,
+		}
+	case *types.Slice:
+		inner := typeExprFor(tt.Elem())
+		if inner == nil {
+			return nil
+		}
+		return &ast.ArrayType{Elt: inner}
+	case *types.Basic:
+		return ast.NewIdent(tt.Name())
 	}
 	return nil
 }

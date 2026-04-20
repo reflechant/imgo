@@ -122,6 +122,42 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 	return nil
 }
 
+// expandArrayBuiltin handles get/set/update for array receivers.
+// Since arrays are value types, set and update return a new array
+// by copying the input array via an IIFE.
+func expandArrayBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos token.Pos, exprRewriter func(ast.Expr) ast.Expr) ast.Expr {
+	receiver := exprRewriter(args[0])
+	rest := args[1:]
+
+	switch name {
+	case "get":
+		return setPos(&ast.IndexExpr{X: receiver, Index: exprRewriter(rest[0])}, pos)
+
+	case "update":
+		if typeExpr == nil {
+			return nil
+		}
+		index := exprRewriter(rest[0])
+		fn := exprRewriter(rest[1])
+		paramName := "__a"
+		body := arrayUpdateBody(paramName, index, fn)
+		return setPos(buildIIFE(paramName, typeExpr, body, receiver), pos)
+	}
+	return nil
+}
+
+// arrayUpdateBody emits a single assignment statement: __a[index] = fn(__a[index])
+func arrayUpdateBody(param string, index ast.Expr, fn ast.Expr) []ast.Stmt {
+	lhs := &ast.IndexExpr{X: ast.NewIdent(param), Index: index}
+	rhsArg := &ast.IndexExpr{X: ast.NewIdent(param), Index: index}
+	rhs := &ast.CallExpr{Fun: fn, Args: []ast.Expr{rhsArg}}
+	return []ast.Stmt{&ast.AssignStmt{
+		Lhs: []ast.Expr{lhs},
+		Tok: token.ASSIGN,
+		Rhs: []ast.Expr{rhs},
+	}}
+}
+
 // expandStructBuiltin handles get/getIn/update/updateIn for struct
 // receivers. Field names must be string literals; dynamic field names
 // are rejected by the validator.

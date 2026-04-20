@@ -226,6 +226,35 @@ func main() {
 			wantErr: "",
 		},
 		{
+			name: "Prohibited append on array",
+			code: `package main
+func main() {
+    a := [2]int{1, 2}
+    l := append(a, 3)
+    _ := l
+}`,
+			wantErr: "builtin 'append' is prohibited on fixed-size arrays",
+		},
+		{
+			name: "Prohibited delete on array",
+			code: `package main
+func main() {
+    a := [2]int{1, 2}
+    delete(a, 0)
+}`,
+			wantErr: "builtin 'delete' is prohibited on fixed-size arrays",
+		},
+		{
+			name: "Prohibited set on array",
+			code: `package main
+func main() {
+    a := [2]int{1, 2}
+    a2 := set(a, 0, 10)
+    _ := a2
+}`,
+			wantErr: "builtin 'set' is prohibited on fixed-size arrays",
+		},
+		{
 			name: "Prohibited cap builtin",
 			code: `package main
 func main() {
@@ -367,7 +396,8 @@ func main() {
 				t.Fatalf("Failed to parse test code: %v", err)
 			}
 
-			err = Validate(fset, f, nil)
+			info := typeCheck(fset, f)
+			err = Validate(fset, f, info)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("Validate() unexpected error: %v", err)

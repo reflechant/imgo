@@ -282,6 +282,45 @@ func TestLanguage(t *testing.T) {
 
 		// --- Builtins --------------------------------------------------------
 		{
+			name: "fixed-size arrays",
+			src: `
+				a := [2]int{1, 2}
+				v0 := a[0]
+				v1 := a[1]
+				n := len(a)
+			`,
+			observe: []string{"v0", "v1", "n"},
+			want:    "v0=1\nv1=2\nn=2\n",
+		},
+		{
+			name: "map builtins with mangled names",
+			src: `
+				m := map[string]int{"a": 1}
+				m := delete(m, "a")
+				m := set(m, "b", 2)
+				m := update(m, "b", func(x int) int { return x + 10 })
+				v := get(m, "b")
+				n := len(m)
+			`,
+			observe: []string{"v", "n"},
+			want:    "v=12\nn=1\n",
+		},
+		{
+			name: "array get/update",
+			src: `
+				a := [3]int{10, 20, 30}
+				v1 := get(a, 1)
+				a2 := update(a, 1, func(x int) int { return x + 5 })
+				v2 := a2[1]
+				a3 := update(a2, 0, func(x int) int { return x + 5 })
+				v3 := a3[0]
+				n := len(a3)
+				orig := a[1]
+			`,
+			observe: []string{"v1", "v2", "v3", "n", "orig"},
+			want:    "v1=20\nv2=25\nv3=15\nn=3\norig=20\n",
+		},
+		{
 			name: "append builtin on a list",
 			src: `
 				l := []int{10, 20}

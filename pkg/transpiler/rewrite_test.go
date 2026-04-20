@@ -233,7 +233,7 @@ var a [5]int
 func main() {
 	x := a[0]
 }`,
-			want: []string{"var a [5]int", "x_1 := a.Get(0)"},
+			want: []string{"var a [5]int", "x_1 := a[0]"},
 		},
 		{
 			name: "type assertion target gets retyped",
@@ -343,7 +343,7 @@ func TestRewriteEdgeCases(t *testing.T) {
 
 	// nil block / nil expr
 	newR().block(nil)
-	if got := newR().expr(nil, false); got != nil {
+	if got, _ := newR().expr(nil, false); got != nil {
 		t.Errorf("expr(nil) = %v, want nil", got)
 	}
 
