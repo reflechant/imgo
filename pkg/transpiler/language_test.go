@@ -360,6 +360,64 @@ func TestLanguage(t *testing.T) {
 			want:    "n=0\nn1=1\nfirst=42\n",
 		},
 
+		// --- Struct builtins -------------------------------------------------
+		{
+			name: "get/update on a struct lower to field access / IIFE",
+			src: `
+				type Point struct{ X, Y int }
+				p := Point{X: 1, Y: 2}
+				a := get(p, "X")
+				b := get(p, "Y")
+				p2 := update(p, "Y", func(y int) int { return y + 10 })
+			`,
+			observe: []string{"a", "b", "p", "p2"},
+			want:    "a=1\nb=2\np={1 2}\np2={1 12}\n",
+		},
+
+		// --- List builtins ---------------------------------------------------
+		{
+			name: "get/set builtins dispatch to list methods",
+			src: `
+				l := []int{10, 20, 30}
+				v := get(l, 1)
+				l2 := set(l, 0, 99)
+				first := get(l2, 0)
+				orig := get(l, 0)
+			`,
+			observe: []string{"v", "first", "orig"},
+			want:    "v=20\nfirst=99\norig=10\n",
+		},
+
+		// --- Expression forms ------------------------------------------------
+		{
+			name: "unary, star, paren exprs and var-with-value decls",
+			src: `
+				x := 5
+				y := -x
+				z := (x + 1)
+				p := &x
+				d := *p
+				var v int = 7
+				var _ int = 99
+				{
+					a := x
+					_ = a
+				}
+			`,
+			observe: []string{"y", "z", "d", "v"},
+			want:    "y=-5\nz=6\nd=5\nv=7\n",
+		},
+		{
+			name: "defer runs after the surrounding function returns",
+			src: `
+				fmt.Println("before")
+				defer fmt.Println("deferred")
+				fmt.Println("after")
+			`,
+			raw:  true,
+			want: "before\nafter\ndeferred\n",
+		},
+
 		// --- Control flow / side-effectful output (raw) ----------------------
 		{
 			name: "range over list yields (index, value) pairs",

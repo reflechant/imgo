@@ -151,6 +151,15 @@ var l []int
 			},
 		},
 		{
+			name: "package-level var initializer is rewritten",
+			input: `package main
+var m = map[string]int{"a": 1}
+`,
+			want: []string{
+				`var m = persistent.NewMap[string, int]().Set("a", 1)`,
+			},
+		},
+		{
 			name: "type switch with Init clause",
 			input: `
 				var a any

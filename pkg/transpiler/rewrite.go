@@ -382,7 +382,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) ast.Expr {
 		e.X = r.expr(e.X, false)
 		return e
 	case *ast.MapType, *ast.ArrayType:
-		return r.typ(e.(ast.Expr))
+		return r.typ(e)
 	case *ast.CallExpr:
 		return r.callExpr(e, wantTwoValues)
 	case *ast.SelectorExpr:
