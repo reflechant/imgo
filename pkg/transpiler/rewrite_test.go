@@ -92,6 +92,19 @@ func TestRewrite(t *testing.T) {
 			},
 		},
 		{
+			name: "append builtin lowers to method calls",
+			input: `
+				l := []int{1}
+				l := append(l, 2)
+				l := append(l, 3, 4)
+			`,
+			want: []string{
+				"l_1 := persistent.NewList[int]().Append(1)",
+				"l_2 := l_1.Append(2)",
+				"l_3 := l_2.Append(3).Append(4)",
+			},
+		},
+		{
 			name: "if/else-if init binds don't leak out",
 			input: `
 				if x := 5; x > 0 {

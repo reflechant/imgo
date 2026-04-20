@@ -18,6 +18,7 @@ var imgoBuiltins = map[string]bool{
 	"updateIn": true,
 	"delete":   true,
 	"deleteIn": true,
+	"append":   true,
 }
 
 // mapBuiltinMethod maps a single-key builtin name to the equivalent
@@ -108,6 +109,15 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 			Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(mapBuiltinMethod[name])},
 			Args: rest,
 		}, pos)
+	case "append":
+		res := receiver
+		for _, arg := range rest {
+			res = &ast.CallExpr{
+				Fun:  &ast.SelectorExpr{X: res, Sel: ast.NewIdent("Append")},
+				Args: []ast.Expr{arg},
+			}
+		}
+		return setPos(res, pos)
 	}
 	return nil
 }

@@ -216,13 +216,14 @@ func main() {
 			wantErr: "",
 		},
 		{
-			name: "Prohibited append builtin",
+			name: "Allowed append builtin",
 			code: `package main
 func main() {
     s := []int{1}
     s2 := append(s, 2)
+    _ := s2
 }`,
-			wantErr: "builtin 'append' is prohibited",
+			wantErr: "",
 		},
 		{
 			name: "Prohibited cap builtin",
@@ -392,7 +393,7 @@ func main() {
 	x := 5
 	x = 10
 	x++
-	y := append([]int{1}, 2)
+	y := new(int)
 	println(y)
 }`
 

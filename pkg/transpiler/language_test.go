@@ -282,6 +282,33 @@ func TestLanguage(t *testing.T) {
 
 		// --- Builtins --------------------------------------------------------
 		{
+			name: "append builtin on a list",
+			src: `
+				l := []int{10, 20}
+				l1 := append(l, 30)
+				l2 := append(l1, 40, 50)
+				n0 := len(l)
+				n1 := len(l1)
+				n2 := len(l2)
+				v0 := l[0]
+				v1 := l1[2]
+				v2 := l2[4]
+			`,
+			observe: []string{"n0", "n1", "n2", "v0", "v1", "v2"},
+			want:    "n0=2\nn1=3\nn2=5\nv0=10\nv1=30\nv2=50\n",
+		},
+		{
+			name: "set/get builtins on a list",
+			src: `
+				l := []int{10, 20}
+				l1 := set(l, 1, 25)
+				v := get(l1, 1)
+				v0 := l1[0]
+			`,
+			observe: []string{"v", "v0"},
+			want:    "v=25\nv0=10\n",
+		},
+		{
 			name: "set/get/update/delete builtins on a map",
 			src: `
 				m := map[string]int{"a": 1}

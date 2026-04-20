@@ -50,7 +50,7 @@ func Validate(fset *token.FileSet, file *ast.File, info *types.Info) error {
 		case *ast.CallExpr:
 			if ident, ok := node.Fun.(*ast.Ident); ok {
 				switch ident.Name {
-				case "append", "cap", "clear", "close", "copy", "new":
+				case "cap", "clear", "close", "copy", "new":
 					v.report(node.Pos(), CodeDisallowedBuiltin,
 						fmt.Sprintf("builtin '%s' is prohibited in ImGo; use functional equivalents", ident.Name))
 				}
