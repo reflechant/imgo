@@ -1,11 +1,10 @@
 version: "2"
 
-formatters:
-  enable:
-    - gofmt
-    - goimports
+run:
+  timeout: 5m
 
 linters:
+  default: none
   enable:
     - errcheck
     - staticcheck
@@ -26,7 +25,11 @@ linters:
     - perfsprint
     - godot
     - whitespace
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
 
-linters-settings:
-  exhaustive:
-    default-signifies-exhaustive: false
+formatters:
+  enable:
+    - gofmt
+    - goimports
