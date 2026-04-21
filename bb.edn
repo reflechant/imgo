@@ -12,5 +12,6 @@
               "-count=1"
               "-coverprofile=coverage.out"
               "./...")
-  check-coverage (println "TBD")
+  check-coverage {:depends [test]
+                  :task (shell "bb scripts/check_coverage.clj")}
   validate {:depends [lint build test check-coverage]}}}
