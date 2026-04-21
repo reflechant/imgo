@@ -1,83 +1,47 @@
 #!/usr/bin/env bb
 
-(require '[babashka.fs :as fs]
-         '[babashka.process :refer [shell]])
+(require '[babashka.process :refer [shell]]
+         '[clojure.string :as str])
 
 (def thresholds
   {"pkg/transpiler" 100.0
    "pkg/persistent" 100.0})
 
-(def paths
-  (keys thresholds))
-
 (def module-name
-  (->
-   (shell
-    {:out :string}
-    "go list -m")
-   :out
-   str/trim-newline))
+  (-> (shell {:out :string} "go list -m")
+      :out
+      str/trim-newline))
 
-(def coverage-raw
-  (->
-   (shell
-    {:out :string}
-    "go tool cover -func=coverage.out")
-   :out
-   str/split-lines
-   drop-last))
+(def coverage-lines
+  (-> (shell {:out :string} "go tool cover -func=coverage.out")
+      :out
+      str/split-lines
+      drop-last))
 
-(defn percent
-  "return coverage percent from line as a float"
-  [line]
-  (let [percent-raw (last (str/split line #"\s"))]
-    (parse-double (subs percent-raw 0 (dec (count percent-raw))))))
+(defn parse-percent [line]
+  (-> (re-find #"[\d.]+%" line)
+      (str/replace "%" "")
+      parse-double))
 
-(defn path-or-nil
-  [[line path]]
-  (let [full-prefix (str module-name "/" path)]
-    (if (str/starts-with? line full-prefix)
-      path
-      nil)))
+(defn package-of [line]
+  (->> (keys thresholds)
+       (filter #(str/starts-with? line (str module-name "/" %)))
+       first))
 
-(defn path
-  "returns the package/file this line matches with or nil"
-  [line]
-  (->>
-   (for [path paths] [line path])
-   (some path-or-nil)))
+(def coverage
+  (->> coverage-lines
+       (group-by package-of)
+       (filter (comp some? key))
+       (into {} (map (fn [[pkg lines]]
+                       (let [percents (map parse-percent lines)]
+                         [pkg (float (/ (reduce + percents) (count percents)))]))))))
 
-(def coverage-map
-  (->>
-   (group-by path coverage-raw)
-   (filter (comp some? first))
-   (map
-    (fn [[path lines]]
-      (let [percents (map percent lines)
-            cnt (count percents)
-            summa (reduce + 0 percents)
-            avg (/ summa cnt)]
-        [path (float avg)])))
-   (into {})))
+(defn check [[pkg threshold]]
+  (let [actual (get coverage pkg 0.0)
+        pass?  (>= actual threshold)
+        mark   (if pass? "[32m✓[0m" "[31m✗[0m")]
+    (println (format "%s - expected: %.1f%%, actual: %.1f%% %s" pkg threshold actual mark))
+    pass?))
 
-(def result
-  (reduce
-   (fn [result-map [path threshold]]
-     (assoc result-map path {:expected threshold
-                             :actual (coverage-map path)}))
-   {}
-   thresholds))
-
-(def all-passed?
-  (reduce
-   (fn [acc [path {:keys [expected actual]}]]
-     (let [actual (or actual 0.0)
-           pass? (>= actual expected)
-           tick (if pass? "\u001b[32m✓\u001b[0m" "\u001b[31m✗\u001b[0m")]
-       (println (format "%s - expected coverage: %.1f%%, actual: %.1f%% %s" path expected actual tick))
-       (and acc pass?)))
-   true
-   result))
-
-(when-not all-passed?
+(when-not (every? check thresholds)
   (System/exit 1))
