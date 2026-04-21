@@ -140,6 +140,33 @@ func TestList(t *testing.T) {
 			t.Errorf("Expected count 1 after early break, got %d", count)
 		}
 	})
+
+	t.Run("Values iterator", func(t *testing.T) {
+		l := NewList[int]().Append(10).Append(20).Append(30)
+		var sum int
+		for v := range l.Values() {
+			sum += v
+		}
+		if sum != 60 {
+			t.Errorf("Expected sum 60, got %d", sum)
+		}
+
+		// Nil list iteration
+		var nl List[int]
+		for v := range nl.Values() {
+			t.Errorf("Nil list should not yield values, got %v", v)
+		}
+
+		// Early break
+		count := 0
+		for range l.Values() {
+			count++
+			break
+		}
+		if count != 1 {
+			t.Errorf("Expected count 1 after early break, got %d", count)
+		}
+	})
 }
 
 func BenchmarkListAppend(b *testing.B) {

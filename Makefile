@@ -21,7 +21,7 @@ test:
 	go test -v -race -count=1 -coverprofile=coverage.out ./...
 
 # Verify coverage gates
-check-coverage:
+check-coverage: test
 	./scripts/check_coverage.sh
 
 # Clean build artifacts

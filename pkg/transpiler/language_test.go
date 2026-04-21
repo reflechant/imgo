@@ -454,6 +454,70 @@ func TestLanguage(t *testing.T) {
 			want:    "v=20\nfirst=99\norig=10\n",
 		},
 
+		// --- Nested composite literals (PR6) ---------------------------------
+		{
+			name: "map of lists: literal creation and element access",
+			src: `
+				m := map[string][]int{
+					"a": {1, 2, 3},
+					"b": {4, 5},
+				}
+				na := m["a"]
+				v := na[1]
+				nb := len(m)
+				nl := len(na)
+			`,
+			observe: []string{"v", "nb", "nl"},
+			want:    "v=2\nnb=2\nnl=3\n",
+		},
+		{
+			name: "list of maps: literal creation and element access",
+			src: `
+				l := []map[string]int{
+					{"a": 1, "b": 2},
+					{"c": 3},
+				}
+				m0 := l[0]
+				v := m0["a"]
+				n := len(l)
+			`,
+			observe: []string{"v", "n"},
+			want:    "v=1\nn=2\n",
+		},
+		{
+			name: "map of structs: implicit struct element gets explicit type",
+			src: `
+				type Point struct{ X, Y int }
+				m := map[string]Point{
+					"p": {X: 1, Y: 2},
+					"q": {X: 3, Y: 4},
+				}
+				p := m["p"]
+				px := p.X
+				py := p.Y
+			`,
+			observe: []string{"px", "py"},
+			want:    "px=1\npy=2\n",
+		},
+		{
+			name: "struct with persistent fields: type rewritten, access works",
+			src: `
+				type Config struct {
+					Tags   []string
+					Scores map[string]int
+				}
+				c := Config{
+					Tags:   []string{"alpha", "beta"},
+					Scores: map[string]int{"x": 10, "y": 20},
+				}
+				n := len(c.Tags)
+				tag := c.Tags[0]
+				score := c.Scores["x"]
+			`,
+			observe: []string{"n", "tag", "score"},
+			want:    "n=2\ntag=alpha\nscore=10\n",
+		},
+
 		// --- Expression forms ------------------------------------------------
 		{
 			name: "unary, star, paren exprs and var-with-value decls",
@@ -507,6 +571,46 @@ func TestLanguage(t *testing.T) {
 			`,
 			raw:  true,
 			want: "captured=10\nshadowed=20\n",
+		},
+
+		// --- Builtin Edge Cases ----------------------------------------------
+		{
+			name: "getIn two-value form for maps",
+			src: `
+				m := map[string]map[string]int{
+					"a": {"b": 1},
+				}
+				v1, ok1 := getIn(m, "a", "b")
+				v2, ok2 := getIn(m, "a", "missing")
+				v3, ok3 := getIn(m, "missing", "b")
+			`,
+			observe: []string{"v1", "ok1", "v2", "ok2", "v3", "ok3"},
+			want:    "v1=1\nok1=true\nv2=0\nok2=false\nv3=0\nok3=false\n",
+		},
+		{
+			name: "list getIn and append multiple",
+			src: `
+				l := [][]int{{1, 2}, {3, 4}}
+				v := getIn(l, 0, 1)
+				l2 := append(l, []int{5, 6}, []int{7, 8})
+				n := len(l2)
+				v2 := getIn(l2, 3, 0)
+			`,
+			observe: []string{"v", "n", "v2"},
+			want:    "v=2\nn=4\nv2=7\n",
+		},
+		{
+			name: "struct getIn and updateIn",
+			src: `
+				type Inner struct { V int }
+				type Outer struct { I Inner }
+				o := Outer{I: Inner{V: 10}}
+				v := getIn(o, "I", "V")
+				o2 := updateIn(o, "I", "V", func(x int) int { return x + 5 })
+				v2 := o2.I.V
+			`,
+			observe: []string{"v", "v2"},
+			want:    "v=10\nv2=15\n",
 		},
 	}
 

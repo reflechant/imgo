@@ -65,6 +65,17 @@ func Rewrite(file *ast.File, info *types.Info) *ast.File {
 					}
 				}
 			}
+			if d.Tok == token.TYPE {
+				for _, spec := range d.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok {
+						if st, ok := ts.Type.(*ast.StructType); ok {
+							for _, field := range st.Fields.List {
+								field.Type = r.typ(field.Type)
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -417,17 +428,30 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 		}
 		return s
 	case *ast.DeclStmt:
-		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
-			for _, spec := range d.Specs {
-				if vs, ok := spec.(*ast.ValueSpec); ok {
-					if vs.Type != nil {
-						vs.Type = r.typ(vs.Type)
+		if d, ok := s.Decl.(*ast.GenDecl); ok {
+			if d.Tok == token.VAR {
+				for _, spec := range d.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok {
+						if vs.Type != nil {
+							vs.Type = r.typ(vs.Type)
+						}
+						for i, name := range vs.Names {
+							vs.Names[i] = &ast.Ident{Name: r.define(name.Name, typeOf(r.info, name)), NamePos: name.Pos()}
+						}
+						for i, val := range vs.Values {
+							vs.Values[i], _ = r.expr(val, false)
+						}
 					}
-					for i, name := range vs.Names {
-						vs.Names[i] = &ast.Ident{Name: r.define(name.Name, typeOf(r.info, name)), NamePos: name.Pos()}
-					}
-					for i, val := range vs.Values {
-						vs.Values[i], _ = r.expr(val, false)
+				}
+			}
+			if d.Tok == token.TYPE {
+				for _, spec := range d.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok {
+						if st, ok := ts.Type.(*ast.StructType); ok {
+							for _, field := range st.Fields.List {
+								field.Type = r.typ(field.Type)
+							}
+						}
 					}
 				}
 			}
@@ -515,7 +539,46 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 			}
 			return res, typeOf(r.info, e)
 		}
-		// General case (e.g. Structs)
+		// Implicit-type composite literal (e.Type == nil): the type is inferred
+		// from context by go/types (e.g. the {1,2} in map[string][]int{"k":{1,2}}).
+		// Dispatch to the same persistent rewrite as the explicit-type cases above.
+		if e.Type == nil {
+			if inferred := typeOf(r.info, e); inferred != nil {
+				if u, ok := inferred.Underlying().(*types.Map); ok {
+					if keyExpr, valExpr := typeExprFor(u.Key()), typeExprFor(u.Elem()); keyExpr != nil && valExpr != nil {
+						r.hasPersistent = true
+						res := setPos(&ast.CallExpr{
+							Fun: persistentGeneric("NewMap", []ast.Expr{r.typ(keyExpr), r.typ(valExpr)}, e.Pos()),
+						}, e.Pos())
+						for _, el := range e.Elts {
+							if kv, ok := el.(*ast.KeyValueExpr); ok {
+								res = methodCall(res, "Set", fst(r.expr(kv.Key, false)), fst(r.expr(kv.Value, false)))
+							}
+						}
+						return res, typeOf(r.info, e)
+					}
+				}
+				if u, ok := inferred.Underlying().(*types.Slice); ok {
+					if eltExpr := typeExprFor(u.Elem()); eltExpr != nil {
+						r.hasPersistent = true
+						res := setPos(&ast.CallExpr{
+							Fun: persistentGeneric("NewList", []ast.Expr{r.typ(eltExpr)}, e.Pos()),
+						}, e.Pos())
+						for _, el := range e.Elts {
+							res = methodCall(res, "Append", fst(r.expr(el, false)))
+						}
+						return res, typeOf(r.info, e)
+					}
+				}
+				// Struct or other named type: add explicit type so the generated Go
+				// is valid when this literal appears as a function argument (Go only
+				// permits omitting the type inside another composite literal, not as args).
+				if typeExpr := typeExprFor(inferred); typeExpr != nil {
+					e.Type = typeExpr
+				}
+			}
+		}
+		// General case (structs, explicit-length arrays)
 		for i, el := range e.Elts {
 			if kv, ok := el.(*ast.KeyValueExpr); ok {
 				kv.Value, _ = r.expr(kv.Value, false)
