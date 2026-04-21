@@ -111,6 +111,54 @@ func TestMap(t *testing.T) {
 		}
 	})
 
+	t.Run("Keys and Values iterators", func(t *testing.T) {
+		m := NewMap[string, int]().Set("a", 1).Set("b", 2)
+
+		keys := make(map[string]bool)
+		for k := range m.Keys() {
+			keys[k] = true
+		}
+		if len(keys) != 2 || !keys["a"] || !keys["b"] {
+			t.Errorf("Expected keys {a, b}, got %v", keys)
+		}
+
+		sum := 0
+		for v := range m.Values() {
+			sum += v
+		}
+		if sum != 3 {
+			t.Errorf("Expected sum 3, got %d", sum)
+		}
+
+		// Nil map iteration
+		var nm Map[string, int]
+		for range nm.Keys() {
+			t.Errorf("Nil map Keys() should not yield")
+		}
+		for range nm.Values() {
+			t.Errorf("Nil map Values() should not yield")
+		}
+
+		// Early break
+		count := 0
+		for range m.Keys() {
+			count++
+			break
+		}
+		if count != 1 {
+			t.Errorf("Expected count 1 after early break, got %d", count)
+		}
+
+		count = 0
+		for range m.Values() {
+			count++
+			break
+		}
+		if count != 1 {
+			t.Errorf("Expected count 1 after early break, got %d", count)
+		}
+	})
+
 	t.Run("SetIn / UpdateIn (Empty path)", func(t *testing.T) {
 		m := NewMap[string, int]().Set("a", 1)
 		m2 := m.SetIn([]string{}, 10)

@@ -406,6 +406,58 @@ func main() {
 			`,
 			want: []string{`x_1 := set_1(m_2, "b", 2)`},
 		},
+		// --- Nested composite literals (PR6) ------------------------------------
+		{
+			name: "map-of-list: implicit list element is rewritten to NewList",
+			input: `
+				m := map[string][]int{
+					"a": {1, 2},
+				}
+			`,
+			want: []string{
+				`persistent.NewMap[string, persistent.List[int]]()`,
+				`.Set("a", persistent.NewList[int]().Append(1).Append(2))`,
+			},
+		},
+		{
+			name: "list-of-map: implicit map element is rewritten to NewMap",
+			input: `
+				l := []map[string]int{
+					{"x": 1},
+				}
+			`,
+			want: []string{
+				`persistent.NewList[persistent.Map[string, int]]()`,
+				`.Append(persistent.NewMap[string, int]().Set("x", 1))`,
+			},
+		},
+		{
+			name: "map-of-struct: implicit struct element gets explicit type added",
+			input: `
+				type Point struct{ X, Y int }
+				m := map[string]Point{
+					"p": {X: 1, Y: 2},
+				}
+			`,
+			want: []string{
+				`persistent.NewMap[string, Point]()`,
+				`.Set("p", Point{X: 1, Y: 2})`,
+			},
+		},
+		{
+			name: "struct with map/list fields has field types rewritten",
+			input: `package main
+type Config struct {
+	Tags   []string
+	Scores map[string]int
+}
+func main() { c := Config{}; _ = c }
+`,
+			want: []string{
+				"Tags\tpersistent.List[string]",
+				"Scores\tpersistent.Map[string, int]",
+			},
+		},
 		{
 			name: "user-defined *In methods on a struct stay intact",
 			input: `package main
@@ -536,6 +588,21 @@ func TestRewriteEdgeCases(t *testing.T) {
 		Type: ast.NewIdent("S"),
 		Elts: []ast.Expr{ast.NewIdent("x")},
 	}, false)
+
+	// Implicit-type CompositeLit with no type info falls through to general case
+	newR().expr(&ast.CompositeLit{
+		Elts: []ast.Expr{ast.NewIdent("x")},
+	}, false)
+
+	// Type DeclStmt with a non-struct type is left alone
+	newR().stmt(&ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.TYPE,
+			Specs: []ast.Spec{
+				&ast.TypeSpec{Name: ast.NewIdent("T"), Type: ast.NewIdent("int")},
+			},
+		},
+	})
 
 	// ForStmt in both bare and fully-populated shapes
 	newR().stmt(&ast.ForStmt{Body: &ast.BlockStmt{}})
