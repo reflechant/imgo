@@ -78,12 +78,11 @@ func typeExprFor(t types.Type) ast.Expr {
 	}
 	switch tt := t.(type) {
 	case *types.Named:
+		// TODO: This does not correctly handle named types from other packages.
+		// It should produce a selector like `pkg.MyType` but currently only
+		// emits the identifier, which works only for the current package or
+		// for predeclared types.
 		obj := tt.Obj()
-		pkg := obj.Pkg()
-		if pkg == nil {
-			return ast.NewIdent(obj.Name())
-		}
-		// Same-package named type: use the bare name.
 		return ast.NewIdent(obj.Name())
 	case *types.Pointer:
 		inner := typeExprFor(tt.Elem())

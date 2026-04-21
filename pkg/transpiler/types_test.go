@@ -124,6 +124,11 @@ func TestTypeExprFor(t *testing.T) {
 	typeNameNoPkg := types.NewTypeName(token.NoPos, nil, "NoPkg", nil)
 	namedNoPkg := types.NewNamed(typeNameNoPkg, types.NewStruct(nil, nil), nil)
 
+	// Type from another package to demonstrate the cross-package issue
+	otherPkg := types.NewPackage("example.com/other", "other")
+	otherTypeName := types.NewTypeName(token.NoPos, otherPkg, "OtherType", nil)
+	namedOtherPkg := types.NewNamed(otherTypeName, types.NewStruct(nil, nil), nil)
+
 	cases := []struct {
 		name string
 		typ  types.Type
@@ -134,6 +139,9 @@ func TestTypeExprFor(t *testing.T) {
 		{"basic string", types.Typ[types.String], "string"},
 		{"named type", named, "S"},
 		{"named type no pkg", namedNoPkg, "NoPkg"},
+		// TODO: This test demonstrates the known issue in typeExprFor.
+		// It currently returns "OtherType" instead of the expected "other.OtherType".
+		{"named type other pkg", namedOtherPkg, "other.OtherType"},
 		{"pointer to int", types.NewPointer(types.Typ[types.Int]), "*int"},
 		{"pointer to named", types.NewPointer(named), "*S"},
 		{"slice of int", types.NewSlice(types.Typ[types.Int]), "[]int"},
@@ -142,8 +150,16 @@ func TestTypeExprFor(t *testing.T) {
 		{"unsupported chan", types.NewChan(types.SendRecv, types.Typ[types.Int]), ""},
 		{"pointer to unsupported", types.NewPointer(types.NewChan(types.SendRecv, types.Typ[types.Int])), ""},
 		{"slice of unsupported", types.NewSlice(types.NewChan(types.SendRecv, types.Typ[types.Int])), ""},
-		{"map of unsupported key", types.NewMap(types.NewChan(types.SendRecv, types.Typ[types.Int]), types.Typ[types.Int]), ""},
-		{"map of unsupported val", types.NewMap(types.Typ[types.String], types.NewChan(types.SendRecv, types.Typ[types.Int])), ""},
+		{
+			"map of unsupported key",
+			types.NewMap(types.NewChan(types.SendRecv, types.Typ[types.Int]), types.Typ[types.Int]),
+			"",
+		},
+		{
+			"map of unsupported val",
+			types.NewMap(types.Typ[types.String], types.NewChan(types.SendRecv, types.Typ[types.Int])),
+			"",
+		},
 		{"array of unsupported", types.NewArray(types.NewChan(types.SendRecv, types.Typ[types.Int]), 3), ""},
 	}
 

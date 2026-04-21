@@ -15,13 +15,16 @@ func TestBuiltinEdgeCases(t *testing.T) {
 	})
 
 	t.Run("expandArrayBuiltin unsupported", func(t *testing.T) {
-		res := expandArrayBuiltin("delete", []ast.Expr{ast.NewIdent("a")}, nil, token.NoPos, func(e ast.Expr) ast.Expr { return e })
+		res := expandArrayBuiltin("delete", []ast.Expr{ast.NewIdent("a")}, nil,
+			token.NoPos, func(e ast.Expr) ast.Expr { return e })
 		if res != nil {
 			t.Errorf("Expected nil for delete on array, got %T", res)
 		}
-		
+
 		// update with nil typeExpr
-		res = expandArrayBuiltin("update", []ast.Expr{ast.NewIdent("a"), ast.NewIdent("i"), ast.NewIdent("f")}, nil, token.NoPos, func(e ast.Expr) ast.Expr { return e })
+		res = expandArrayBuiltin("update", []ast.Expr{
+			ast.NewIdent("a"), ast.NewIdent("i"), ast.NewIdent("f"),
+		}, nil, token.NoPos, func(e ast.Expr) ast.Expr { return e })
 		if res != nil {
 			t.Errorf("Expected nil for update on array with nil typeExpr, got %T", res)
 		}
@@ -35,31 +38,41 @@ func TestBuiltinEdgeCases(t *testing.T) {
 		}
 
 		// getIn with non-string lit
-		res = expandStructBuiltin("getIn", []ast.Expr{ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("notalit")}, nil, token.NoPos)
+		res = expandStructBuiltin("getIn", []ast.Expr{
+			ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("notalit"),
+		}, nil, token.NoPos)
 		if res != nil {
 			t.Errorf("Expected nil for getIn with non-string lit, got %T", res)
 		}
 
 		// update with non-string lit
-		res = expandStructBuiltin("update", []ast.Expr{ast.NewIdent("s"), ast.NewIdent("notalit"), ast.NewIdent("f")}, ast.NewIdent("T"), token.NoPos)
+		res = expandStructBuiltin("update", []ast.Expr{
+			ast.NewIdent("s"), ast.NewIdent("notalit"), ast.NewIdent("f"),
+		}, ast.NewIdent("T"), token.NoPos)
 		if res != nil {
 			t.Errorf("Expected nil for update with non-string lit, got %T", res)
 		}
 
 		// updateIn with non-string lit
-		res = expandStructBuiltin("updateIn", []ast.Expr{ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("notalit"), ast.NewIdent("f")}, ast.NewIdent("T"), token.NoPos)
+		res = expandStructBuiltin("updateIn", []ast.Expr{
+			ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("notalit"), ast.NewIdent("f"),
+		}, ast.NewIdent("T"), token.NoPos)
 		if res != nil {
 			t.Errorf("Expected nil for updateIn with non-string lit, got %T", res)
 		}
 
 		// update with nil typeExpr
-		res = expandStructBuiltin("update", []ast.Expr{ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("f")}, nil, token.NoPos)
+		res = expandStructBuiltin("update", []ast.Expr{
+			ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("f"),
+		}, nil, token.NoPos)
 		if res != nil {
 			t.Errorf("Expected nil for update with nil typeExpr, got %T", res)
 		}
 
 		// updateIn with nil typeExpr
-		res = expandStructBuiltin("updateIn", []ast.Expr{ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("f")}, nil, token.NoPos)
+		res = expandStructBuiltin("updateIn", []ast.Expr{
+			ast.NewIdent("s"), &ast.BasicLit{Kind: token.STRING, Value: `"A"`}, ast.NewIdent("f"),
+		}, nil, token.NoPos)
 		if res != nil {
 			t.Errorf("Expected nil for updateIn with nil typeExpr, got %T", res)
 		}
