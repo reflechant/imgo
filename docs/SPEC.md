@@ -25,15 +25,17 @@ Pointers are permitted in ImGo to enable memory-efficient structural sharing and
 
 ### 2.3 Prohibited Builtin Functions
 The following Go builtin functions are prohibited because they imply in-place mutation or handle pointers in an unsafe manner for ImGo's core:
-- **`append(s, ...)`**: Prohibited. Use `s.Append(v)` on persistent lists instead.
+- **`append(s, ...)`**: Supported for persistent lists. Desugars to `.Append(v)`.
 - **`cap(c)`**: Prohibited. Persistent collections do not have a separate capacity concept; use `len(c)`.
 - **`clear(c)`**: Prohibited. Performs in-place mutation of maps and slices.
 - **`close(c)`**: Prohibited. Mutates channel state.
 - **`copy(dst, src)`**: Prohibited. Performs in-place mutation of the destination.
-- **`delete(m, k)`**: Prohibited. Use the `.Delete(k)` or `.DeleteIn(path...)` methods instead.
+- **`delete(m, k)`**: Supported for persistent maps. Desugars to `.Delete(k)`.
 - **`new(T)`**: Prohibited. Returns a pointer.
 
 ### 2.4 Supported Builtin Functions
+- **`append(s, v)`**: Supported. Desugars to `s.Append(v)`.
+- **`delete(m, k)`**: Supported. Desugars to `m.Delete(k)`.
 - **`len(c)`**: Supported. Desugars to `persistent.Len(c)`.
 - **`make(T, ...)`**: Supported as syntactic sugar (see [Section 6: Transparency & Nuances](#6-transparency--nuances)).
 - **`panic`, `recover`**: Supported for standard error handling.

@@ -50,7 +50,22 @@ func Validate(fset *token.FileSet, file *ast.File, info *types.Info) error {
 		case *ast.CallExpr:
 			if ident, ok := node.Fun.(*ast.Ident); ok {
 				switch ident.Name {
-				case "append", "cap", "clear", "close", "copy", "new":
+				case "append":
+					if len(node.Args) > 0 && isArrayLike(v.info, node.Args[0]) {
+						v.report(node.Pos(), CodeDisallowedBuiltin,
+							"builtin 'append' is prohibited on fixed-size arrays")
+					}
+				case "delete":
+					if len(node.Args) > 0 && isArrayLike(v.info, node.Args[0]) {
+						v.report(node.Pos(), CodeDisallowedBuiltin,
+							"builtin 'delete' is prohibited on fixed-size arrays")
+					}
+				case "set":
+					if len(node.Args) > 0 && isArrayLike(v.info, node.Args[0]) {
+						v.report(node.Pos(), CodeDisallowedBuiltin,
+							"builtin 'set' is prohibited on fixed-size arrays; use 'update'")
+					}
+				case "cap", "clear", "close", "copy", "new":
 					v.report(node.Pos(), CodeDisallowedBuiltin,
 						fmt.Sprintf("builtin '%s' is prohibited in ImGo; use functional equivalents", ident.Name))
 				}

@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"strings"
 	"testing"
 )
@@ -92,6 +93,112 @@ func TestRewrite(t *testing.T) {
 			},
 		},
 		{
+			name: "append builtin lowers to method calls",
+			input: `
+				l := []int{1}
+				l := append(l, 2)
+				l := append(l, 3, 4)
+			`,
+			want: []string{
+				"l_1 := persistent.NewList[int]().Append(1)",
+				"l_2 := l_1.Append(2)",
+				"l_3 := l_2.Append(3).Append(4)",
+			},
+		},
+		{
+			name: "fixed-size array make is left alone",
+			input: `
+				a := make([5]int)
+			`,
+			want: []string{"a_1 := make([5]int)"},
+		},
+		{
+			name: "unsupported method on list is left alone",
+			input: `
+				l := []int{1}
+				l.NoMethod(0)
+			`,
+			want: []string{"l_1 := persistent.NewList[int]().Append(1)", "l_1.NoMethod(0)"},
+		},
+		{
+			name: "make with no args is left alone",
+			input: `
+				x := make()
+			`,
+			want: []string{"x_1 := make()"},
+		},
+		{
+			name: "make with non-map/list type is left alone",
+			input: `
+				x := make(int)
+			`,
+			want: []string{"x_1 := make(int)"},
+		},
+		{
+			name: "dynamic get on struct is left alone",
+			input: `
+				type S struct { F int }
+				var s S
+				f := "F"
+				x := get(s, f)
+			`,
+			want: []string{"x_1 := get(s_1, f_1)"},
+		},
+		{
+			name: "In-update method calls on map",
+			input: `
+				m := map[string]map[string]int{}
+				m1 := m.SetIn("a", "b", 1)
+				m2 := m1.UpdateIn("a", "b", func(x int) int { return x + 1 })
+				m3 := m2.DeleteIn("a", "b")
+			`,
+			want: []string{
+				"m1_1 := m_1.Set(\"a\", m_1.Get(\"a\").Set(\"b\", 1))",
+				"m2_1 := m1_1.Set(\"a\", m1_1.Get(\"a\").Update(\"b\", func(x_1 int) int { return x_1 + 1 }))",
+				"m3_1 := m2_1.Set(\"a\", m2_1.Get(\"a\").Delete(\"b\"))",
+			},
+		},
+		{
+			name: "non-selector call is left alone",
+			input: `
+				func() {}()
+			`,
+			want: []string{"func() {}()"},
+		},
+		{
+			name: "unsupported method name on map is left alone",
+			input: `
+				m := map[string]int{}
+				m.NonExistent(1)
+			`,
+			want: []string{"m_1.NonExistent(1)"},
+		},
+		{
+			name: "make with slice type is rewritten",
+			input: `
+				s := make([]int, 10)
+			`,
+			want: []string{"s_1 := persistent.NewList[int]()"},
+		},
+		{
+			name: "In-updates with insufficient args are left alone",
+			input: `
+				var m map[string]int
+				m1 := m.SetIn()
+				m1 := m.SetIn("a")
+				m2 := m.UpdateIn()
+				m2 := m.UpdateIn("a")
+				m3 := m.DeleteIn()
+			`,
+			want: []string{
+				"m1_1 := m_1.SetIn()",
+				"m1_2 := m_1.SetIn(\"a\")",
+				"m2_1 := m_1.UpdateIn()",
+				"m2_2 := m_1.UpdateIn(\"a\")",
+				"m3_1 := m_1.DeleteIn()",
+			},
+		},
+		{
 			name: "if/else-if init binds don't leak out",
 			input: `
 				if x := 5; x > 0 {
@@ -132,7 +239,7 @@ func TestRewrite(t *testing.T) {
 			`,
 			want: []string{
 				`m_2 := m_1.Set("a", m_1.Get("a").Set("b", 1))`,
-				`m_3 := m_2.Set("a", m_2.Get("a").Update("b", func(v any) any { return v }))`,
+				`m_3 := m_2.Set("a", m_2.Get("a").Update("b", func(v_1 any) any { return v_1 }))`,
 			},
 		},
 		{
@@ -214,13 +321,24 @@ func main() {
 			want: []string{`import "github.com/rg/imgo/pkg/persistent"`},
 		},
 		{
+			name: "array method call expands to IIFE",
+			input: `
+				a := [3]int{1, 2, 3}
+				a2 := a.Update(1, func(x int) int { return x + 5 })
+			`,
+			want: []string{
+				"a_1 := [3]int{1, 2, 3}",
+				"a2_1 := func(__a [3]int) [3]int",
+			},
+		},
+		{
 			name: "fixed-size array is not rewritten to persistent.List",
 			input: `package main
 var a [5]int
 func main() {
 	x := a[0]
 }`,
-			want: []string{"var a [5]int", "x_1 := a.Get(0)"},
+			want: []string{"var a [5]int", "x_1 := a[0]"},
 		},
 		{
 			name: "type assertion target gets retyped",
@@ -236,7 +354,7 @@ func main() {
 				m := map[string]any{}
 				m = m.UpdateIn("a", func(v any) any { return v })
 			`,
-			want: []string{`m_1.Update("a", func(v any) any { return v })`},
+			want: []string{`m_1.Update("a", func(v_1 any) any { return v_1 })`},
 		},
 		{
 			name: "builtin set/get/update/delete on map",
@@ -252,7 +370,7 @@ func main() {
 				`m_1 := persistent.NewMap[string, int]().Set("a", 1)`,
 				`m1_1 := m_1.Set("b", 2)`,
 				`v_1 := m1_1.Get("a")`,
-				`m2_1 := m1_1.Update("a", func(x int) int { return x + 1 })`,
+				`m2_1 := m1_1.Update("a", func(x_1 int) int { return x_1 + 1 })`,
 				`m3_1 := m2_1.Delete("b")`,
 			},
 		},
@@ -286,7 +404,7 @@ func main() {
 				x := set(m, "b", 2)
 				println(x)
 			`,
-			want: []string{`x_1 := set_1(m_1, "b", 2)`},
+			want: []string{`x_1 := set_1(m_2, "b", 2)`},
 		},
 		{
 			name: "user-defined *In methods on a struct stay intact",
@@ -304,7 +422,7 @@ func main() {
 }`,
 			want: []string{
 				"r1_1 := s_1.SetIn(1, 2, 3)",
-				"r2_1 := s_1.UpdateIn(1, 2, func(v int) int",
+				"r2_1 := s_1.UpdateIn(1, 2, func(v_2 int) int",
 				"r3_1 := s_1.DeleteIn(1, 2)",
 			},
 		},
@@ -325,12 +443,13 @@ func TestRewriteEdgeCases(t *testing.T) {
 		return &rewriter{
 			env:      []map[string]string{make(map[string]string)},
 			versions: make(map[string]int),
+			types:    make(map[string]types.Type),
 		}
 	}
 
 	// nil block / nil expr
 	newR().block(nil)
-	if got := newR().expr(nil, false); got != nil {
+	if got, _ := newR().expr(nil, false); got != nil {
 		t.Errorf("expr(nil) = %v, want nil", got)
 	}
 

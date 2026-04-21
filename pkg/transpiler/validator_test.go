@@ -4,6 +4,7 @@ import (
 	"errors"
 	"go/parser"
 	"go/token"
+	"strings"
 	"testing"
 )
 
@@ -216,13 +217,43 @@ func main() {
 			wantErr: "",
 		},
 		{
-			name: "Prohibited append builtin",
+			name: "Allowed append builtin",
 			code: `package main
 func main() {
     s := []int{1}
     s2 := append(s, 2)
+    _ := s2
 }`,
-			wantErr: "builtin 'append' is prohibited",
+			wantErr: "",
+		},
+		{
+			name: "Prohibited append on array",
+			code: `package main
+func main() {
+    a := [2]int{1, 2}
+    l := append(a, 3)
+    _ := l
+}`,
+			wantErr: "builtin 'append' is prohibited on fixed-size arrays",
+		},
+		{
+			name: "Prohibited delete on array",
+			code: `package main
+func main() {
+    a := [2]int{1, 2}
+    delete(a, 0)
+}`,
+			wantErr: "builtin 'delete' is prohibited on fixed-size arrays",
+		},
+		{
+			name: "Prohibited set on array",
+			code: `package main
+func main() {
+    a := [2]int{1, 2}
+    a2 := set(a, 0, 10)
+    _ := a2
+}`,
+			wantErr: "builtin 'set' is prohibited on fixed-size arrays",
 		},
 		{
 			name: "Prohibited cap builtin",
@@ -366,7 +397,8 @@ func main() {
 				t.Fatalf("Failed to parse test code: %v", err)
 			}
 
-			err = Validate(fset, f, nil)
+			info := typeCheck(fset, f)
+			err = Validate(fset, f, info)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("Validate() unexpected error: %v", err)
@@ -374,16 +406,12 @@ func main() {
 			} else {
 				if err == nil {
 					t.Errorf("Validate() expected error containing %q, got nil", tt.wantErr)
-				} else if !contains(err.Error(), tt.wantErr) {
+				} else if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Errorf("Validate() error = %v, want error containing %q", err, tt.wantErr)
 				}
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || (len(substr) > 0 && (s[0:len(substr)] == substr || contains(s[1:], substr))))
 }
 
 func TestValidateAccumulatesDiagnostics(t *testing.T) {
@@ -392,7 +420,7 @@ func main() {
 	x := 5
 	x = 10
 	x++
-	y := append([]int{1}, 2)
+	y := new(int)
 	println(y)
 }`
 
@@ -445,7 +473,7 @@ func main() {
 	}
 	msg := verr.Error()
 	want := "test.im:4:2: error[E001] mutation operator = is prohibited"
-	if !contains(msg, want) {
+	if !strings.Contains(msg, want) {
 		t.Errorf("Error() = %q, want substring %q", msg, want)
 	}
 }

@@ -28,6 +28,7 @@ type Diagnostic struct {
 	Message string
 }
 
+// Error implements the error interface.
 func (d Diagnostic) Error() string {
 	return fmt.Sprintf("%s: error[%s] %s", d.Pos, d.Code, d.Message)
 }
@@ -36,6 +37,7 @@ func (d Diagnostic) Error() string {
 // An empty Diagnostics should be returned as nil by callers (see asError).
 type Diagnostics []Diagnostic
 
+// Error implements the error interface, joining all diagnostics into a single string.
 func (ds Diagnostics) Error() string {
 	var b strings.Builder
 	for i, d := range ds {

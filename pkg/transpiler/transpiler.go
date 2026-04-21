@@ -1,3 +1,6 @@
+// Package transpiler implements the two-phase ImGo transpilation pipeline:
+// validate ImGo source for immutability violations, then rewrite it to
+// idiomatic Go using persistent data structures from pkg/persistent.
 package transpiler
 
 import (

@@ -57,9 +57,10 @@ func main() {
 	fmt.Printf("Original map size: %d\n", len(m))  // 2
 	fmt.Printf("New map size: %d\n", len(m1))       // 3
 
-	// Lists work the same way. The 'append' builtin is prohibited.
+	// Lists work the same way. The 'append' builtin is supported.
 	l := []int{10, 20}
-	l1 := l.Append(30)
+	l1 := append(l, 30) // Returns new list [10, 20, 30]
+	l2 := l1.Append(40) // Method call also works!
 	
 	// Indexing desugars to safe Get() calls.
 	fmt.Printf("List value: %d\n", l1[2]) // 30
@@ -108,6 +109,9 @@ func main() {
 	// 5. BUILTIN DEVIATIONS
 	// -------------------------------------------------------------------------
 
+	// ImGo supports append(s, v) and delete(m, k) as pure functions.
+	// They return a new version of the collection.
+	
 	// make() ignores capacity/length hints for persistent collections.
 	// make([]int, 10) returns a list of length 0, not 10.
 	lEmpty := make([]int, 10)

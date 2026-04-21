@@ -4,30 +4,28 @@ run:
   timeout: 5m
 
 linters:
-  default: none
   enable:
-    - errcheck
-    - staticcheck
-    - unused
-    - ineffassign
-    - govet
-    - misspell
     - exhaustive
     - errorlint
     - forcetypeassert
-    - gocritic
     - predeclared
     - nilerr
     - nilnesserr
+    - gochecksumtype
+    - asciicheck
+    - revive
+    - lll
     - modernize
     - intrange
     - exptostd
-    - perfsprint
-    - godot
-    - whitespace
+    - copyloopvar
+    - unconvert
+    - misspell
   settings:
     exhaustive:
       default-signifies-exhaustive: false
+    lll:
+      line-length: 120
 
 formatters:
   enable:

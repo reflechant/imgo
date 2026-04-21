@@ -5,6 +5,7 @@ import (
 	"go/importer"
 	"go/token"
 	"go/types"
+	"strconv"
 )
 
 // typeCheck runs go/types over file on a best-effort basis. Errors are
@@ -52,19 +53,6 @@ func isMapLike(info *types.Info, x ast.Expr) bool {
 	return ok
 }
 
-// isListLike reports whether x is a Go slice. Unlike isMapLike, the
-// fallback for unknown types is false: builtins on lists must be
-// dispatched only when we can prove the receiver is a slice, otherwise
-// the map fallback (which appends method-call shape) wins.
-func isListLike(info *types.Info, x ast.Expr) bool {
-	t := typeOf(info, x)
-	if t == nil {
-		return false
-	}
-	_, ok := t.Underlying().(*types.Slice)
-	return ok
-}
-
 // isArrayLike reports whether x is a Go fixed-size array.
 func isArrayLike(info *types.Info, x ast.Expr) bool {
 	t := typeOf(info, x)
@@ -72,18 +60,6 @@ func isArrayLike(info *types.Info, x ast.Expr) bool {
 		return false
 	}
 	_, ok := t.Underlying().(*types.Array)
-	return ok
-}
-
-// isStructLike reports whether x is a struct value. Pointer-to-struct
-// is excluded — Stage 1 supports the value form only; an explicit deref
-// keeps the user's intent visible.
-func isStructLike(info *types.Info, x ast.Expr) bool {
-	t := typeOf(info, x)
-	if t == nil {
-		return false
-	}
-	_, ok := t.Underlying().(*types.Struct)
 	return ok
 }
 
@@ -118,6 +94,23 @@ func typeExprFor(t types.Type) ast.Expr {
 			return nil
 		}
 		return &ast.StarExpr{X: inner}
+	case *types.Array:
+		inner := typeExprFor(tt.Elem())
+		if inner == nil {
+			return nil
+		}
+		return &ast.ArrayType{
+			Len: &ast.BasicLit{Kind: token.INT, Value: strconv.FormatInt(tt.Len(), 10)},
+			Elt: inner,
+		}
+	case *types.Slice:
+		inner := typeExprFor(tt.Elem())
+		if inner == nil {
+			return nil
+		}
+		return &ast.ArrayType{Elt: inner}
+	case *types.Basic:
+		return ast.NewIdent(tt.Name())
 	}
 	return nil
 }

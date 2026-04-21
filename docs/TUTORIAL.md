@@ -45,8 +45,8 @@ The standard `[]T` (slice) syntax is transpiled to a persistent Vector Trie.
 ```go
 l := []int{10, 20}
 
-// The 'append' builtin is prohibited. Use .Append()
-l1 := l.Append(30) // Returns new list [10, 20, 30]
+// The 'append' builtin is supported.
+l1 := append(l, 30) // Returns new list [10, 20, 30]
 
 fmt.Println(l1[2]) // Prints 30
 ```
@@ -89,7 +89,9 @@ m1 := m.Set("recovered", 42)
 - **`make`**: Returns empty collections. Capacity hints are ignored. For lists, `make([]T, 10)` returns a list of length **0**, not 10.
 - **`len`**: Works normally but is desugared to `persistent.Len()`.
 - **`range`**: Works normally but is desugared to `m.All()` or `l.All()`.
-- **Prohibited**: `append`, `cap`, `clear`, `close`, `copy`, `delete`, `new`.
+- **`append(s, v)`**: Supported. Returns a new list with the value appended.
+- **`delete(m, k)`**: Supported. Returns a new map with the key removed.
+- **Prohibited**: `cap`, `clear`, `close`, `copy`, `new`.
 
 ## 7. The Philosophy
 
