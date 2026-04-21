@@ -21,12 +21,11 @@ linters:
     - copyloopvar
     - unconvert
     - misspell
-
-linters-settings:
-  exhaustive:
-    default-signifies-exhaustive: false
-  lll:
-    line-length: 120
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
+    lll:
+      line-length: 120
 
 formatters:
   enable:
