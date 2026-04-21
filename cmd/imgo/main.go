@@ -1,3 +1,4 @@
+// Package main provides the imgo CLI tool for transpiling ImGo source files into immutable Go.
 package main
 
 import (

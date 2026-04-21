@@ -125,7 +125,13 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 // expandArrayBuiltin handles get/set/update for array receivers.
 // Since arrays are value types, set and update return a new array
 // by copying the input array via an IIFE.
-func expandArrayBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos token.Pos, exprRewriter func(ast.Expr) ast.Expr) ast.Expr {
+func expandArrayBuiltin(
+	name string,
+	args []ast.Expr,
+	typeExpr ast.Expr,
+	pos token.Pos,
+	exprRewriter func(ast.Expr) ast.Expr,
+) ast.Expr {
 	receiver := exprRewriter(args[0])
 	rest := args[1:]
 
@@ -146,7 +152,7 @@ func expandArrayBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos tok
 	return nil
 }
 
-// arrayUpdateBody emits a single assignment statement: __a[index] = fn(__a[index])
+// arrayUpdateBody emits a single assignment statement: __a[index] = fn(__a[index]).
 func arrayUpdateBody(param string, index ast.Expr, fn ast.Expr) []ast.Stmt {
 	lhs := &ast.IndexExpr{X: ast.NewIdent(param), Index: index}
 	rhsArg := &ast.IndexExpr{X: ast.NewIdent(param), Index: index}

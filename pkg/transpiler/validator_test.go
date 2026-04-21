@@ -4,6 +4,7 @@ import (
 	"errors"
 	"go/parser"
 	"go/token"
+	"strings"
 	"testing"
 )
 
@@ -405,16 +406,12 @@ func main() {
 			} else {
 				if err == nil {
 					t.Errorf("Validate() expected error containing %q, got nil", tt.wantErr)
-				} else if !contains(err.Error(), tt.wantErr) {
+				} else if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Errorf("Validate() error = %v, want error containing %q", err, tt.wantErr)
 				}
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || (len(substr) > 0 && (s[0:len(substr)] == substr || contains(s[1:], substr))))
 }
 
 func TestValidateAccumulatesDiagnostics(t *testing.T) {
@@ -476,7 +473,7 @@ func main() {
 	}
 	msg := verr.Error()
 	want := "test.im:4:2: error[E001] mutation operator = is prohibited"
-	if !contains(msg, want) {
+	if !strings.Contains(msg, want) {
 		t.Errorf("Error() = %q, want substring %q", msg, want)
 	}
 }

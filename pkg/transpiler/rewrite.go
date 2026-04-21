@@ -20,6 +20,8 @@ type rewriter struct {
 	hasPersistent bool
 }
 
+// Rewrite performs the core AST transformation of an ImGo source file into Go.
+// It mangles identifiers for SSA-style immutability and desugars persistent operations.
 func Rewrite(file *ast.File, info *types.Info) *ast.File {
 	r := &rewriter{
 		versions: make(map[string]int),
@@ -35,7 +37,9 @@ func Rewrite(file *ast.File, info *types.Info) *ast.File {
 				if d.Type.Params != nil {
 					for _, field := range d.Type.Params.List {
 						for i, name := range field.Names {
-							field.Names[i] = r.defineIdent(name).(*ast.Ident)
+							if id, ok := r.defineIdent(name).(*ast.Ident); ok {
+								field.Names[i] = id
+							}
 						}
 						field.Type = r.typ(field.Type)
 					}
@@ -256,6 +260,7 @@ func (r *rewriter) isStructLike(x ast.Expr) bool {
 func (r *rewriter) isMapLike(x ast.Expr) bool {
 	t := r.typeOf(x)
 	if t == nil {
+		// Fallback for untyped literals during rewrite.
 		return true
 	}
 	_, ok := t.Underlying().(*types.Map)
@@ -415,16 +420,11 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 		if d, ok := s.Decl.(*ast.GenDecl); ok && d.Tok == token.VAR {
 			for _, spec := range d.Specs {
 				if vs, ok := spec.(*ast.ValueSpec); ok {
-					var typ types.Type
 					if vs.Type != nil {
 						vs.Type = r.typ(vs.Type)
 					}
 					for i, name := range vs.Names {
-						t := typ
-						if t == nil {
-							t = typeOf(r.info, name)
-						}
-						vs.Names[i] = &ast.Ident{Name: r.define(name.Name, t), NamePos: name.Pos()}
+						vs.Names[i] = &ast.Ident{Name: r.define(name.Name, typeOf(r.info, name)), NamePos: name.Pos()}
 					}
 					for i, val := range vs.Values {
 						vs.Values[i], _ = r.expr(val, false)
@@ -448,7 +448,6 @@ func (r *rewriter) defineIdentWithType(e ast.Expr, typ types.Type) ast.Expr {
 	}
 	return &ast.Ident{Name: r.define(ident.Name, t), NamePos: ident.Pos()}
 }
-
 
 func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type) {
 	if expr == nil {
@@ -526,7 +525,19 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 		}
 		return e, typeOf(r.info, e)
 	case *ast.FuncLit:
-		r.scoped(func() { r.block(e.Body) })
+		r.scoped(func() {
+			if e.Type != nil && e.Type.Params != nil {
+				for _, field := range e.Type.Params.List {
+					for i, name := range field.Names {
+						if id, ok := r.defineIdent(name).(*ast.Ident); ok {
+							field.Names[i] = id
+						}
+					}
+					field.Type = r.typ(field.Type)
+				}
+			}
+			r.block(e.Body)
+		})
 		return e, typeOf(r.info, e)
 	case *ast.ParenExpr:
 		e.X, _ = r.expr(e.X, false)
@@ -559,10 +570,9 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 	return expr, typeOf(r.info, expr)
 }
 
-func fst[T any, U any](t T, u U) T {
+func fst[T any, U any](t T, _ U) T {
 	return t
 }
-
 
 // callExpr handles the CallExpr branch of expr(). ImGo-specific lowerings
 // fire here: value-update builtins (set/get/update/delete, *In forms),
@@ -580,30 +590,35 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 	// Builtin recognition is suppressed when the name is shadowed by a local
 	// binding (Go's own len/append shadowing rule).
 	if ident, ok := e.Fun.(*ast.Ident); ok {
-		if imgoBuiltins[ident.Name] && len(e.Args) >= 2 && !isShadowed(r.env, ident.Name) {
+		name := ident.Name
+		if imgoBuiltins[name] && len(e.Args) >= 2 && !isShadowed(r.env, name) {
 			if r.isStructLike(e.Args[0]) {
 				receiverType := r.typeOf(e.Args[0])
 				typeExpr := typeExprFor(receiverType)
-				if expanded := expandStructBuiltin(ident.Name, e.Args, typeExpr, e.Pos()); expanded != nil {
+				if expanded := expandStructBuiltin(name, e.Args, typeExpr, e.Pos()); expanded != nil {
 					return fst(r.expr(expanded, wantTwoValues)), receiverType
 				}
 			}
 			if r.isArrayLike(e.Args[0]) {
 				receiverType := r.typeOf(e.Args[0])
 				typeExpr := typeExprFor(receiverType)
-				if expanded := expandArrayBuiltin(ident.Name, e.Args, typeExpr, e.Pos(), func(ex ast.Expr) ast.Expr { return fst(r.expr(ex, false)) }); expanded != nil {
+				expanded := expandArrayBuiltin(
+					name, e.Args, typeExpr, e.Pos(),
+					func(ex ast.Expr) ast.Expr { return fst(r.expr(ex, false)) },
+				)
+				if expanded != nil {
 					return expanded, receiverType
 				}
 			}
 			if r.isListLike(e.Args[0]) {
 				receiverType := r.typeOf(e.Args[0])
-				if expanded := expandListBuiltin(ident.Name, e.Args, e.Pos()); expanded != nil {
+				if expanded := expandListBuiltin(name, e.Args, e.Pos()); expanded != nil {
 					return fst(r.expr(expanded, wantTwoValues)), receiverType
 				}
 			}
 			if r.isMapLike(e.Args[0]) {
 				receiverType := r.typeOf(e.Args[0])
-				return fst(r.expr(expandMapBuiltin(ident.Name, e.Args, wantTwoValues, e.Pos()), wantTwoValues)), receiverType
+				return fst(r.expr(expandMapBuiltin(name, e.Args, wantTwoValues, e.Pos()), wantTwoValues)), receiverType
 			}
 		}
 
@@ -656,20 +671,22 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 
 	// Dispatch on rewritten receiver's type for methods like .Set, .Append, etc.
 	receiver := sel.X
-	switch sel.Sel.Name {
+	methodName := sel.Sel.Name
+	switch methodName {
 	case "Set", "Append", "Update", "Delete":
 		if r.isArrayLike(receiver) {
 			receiverType := r.typeOf(receiver)
 			typeExpr := typeExprFor(receiverType)
-			builtinName := strings.ToLower(sel.Sel.Name)
+			builtinName := strings.ToLower(methodName)
 			args := append([]ast.Expr{receiver}, e.Args...)
-			if expanded := expandArrayBuiltin(builtinName, args, typeExpr, e.Pos(), func(ex ast.Expr) ast.Expr { return ex }); expanded != nil {
+			expanded := expandArrayBuiltin(builtinName, args, typeExpr, e.Pos(), func(ex ast.Expr) ast.Expr { return ex })
+			if expanded != nil {
 				return expanded, receiverType
 			}
 		}
 		if r.isListLike(receiver) {
 			receiverType := r.typeOf(receiver)
-			builtinName := strings.ToLower(sel.Sel.Name)
+			builtinName := strings.ToLower(methodName)
 			args := append([]ast.Expr{receiver}, e.Args...)
 			if expanded := expandListBuiltin(builtinName, args, e.Pos()); expanded != nil {
 				return expanded, receiverType
@@ -682,23 +699,32 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 	if !r.isMapLike(receiver) {
 		return e, typeOf(r.info, e)
 	}
-	switch sel.Sel.Name {
+	switch methodName {
 	case "SetIn":
+		if len(e.Args) < 2 {
+			return e, typeOf(r.info, e)
+		}
 		keys := e.Args[:len(e.Args)-1]
 		value := e.Args[len(e.Args)-1]
-		res := setPos(expandInChain(sel.X, keys, func(x, k ast.Expr) ast.Expr {
+		res := setPos(expandInChain(receiver, keys, func(x, k ast.Expr) ast.Expr {
 			return methodCall(x, "Set", k, value)
 		}), e.Pos())
 		return res, typeOf(r.info, e)
 	case "UpdateIn":
+		if len(e.Args) < 2 {
+			return e, typeOf(r.info, e)
+		}
 		keys := e.Args[:len(e.Args)-1]
 		fn := e.Args[len(e.Args)-1]
-		res := setPos(expandInChain(sel.X, keys, func(x, k ast.Expr) ast.Expr {
+		res := setPos(expandInChain(receiver, keys, func(x, k ast.Expr) ast.Expr {
 			return methodCall(x, "Update", k, fn)
 		}), e.Pos())
 		return res, typeOf(r.info, e)
 	case "DeleteIn":
-		res := setPos(expandInChain(sel.X, e.Args, func(x, k ast.Expr) ast.Expr {
+		if len(e.Args) == 0 {
+			return e, typeOf(r.info, e)
+		}
+		res := setPos(expandInChain(receiver, e.Args, func(x, k ast.Expr) ast.Expr {
 			return methodCall(x, "Delete", k)
 		}), e.Pos())
 		return res, typeOf(r.info, e)

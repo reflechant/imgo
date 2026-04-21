@@ -11,6 +11,10 @@ linters:
     - predeclared
     - nilerr
     - nilnesserr
+    - gochecksumtype
+    - asciicheck
+    - revive
+    - lll
     - modernize
     - intrange
     - exptostd
@@ -21,6 +25,8 @@ linters:
 linters-settings:
   exhaustive:
     default-signifies-exhaustive: false
+  lll:
+    line-length: 120
 
 formatters:
   enable:
