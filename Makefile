@@ -13,6 +13,7 @@ fmt:
 
 # Run linter
 lint:
+	golangci-lint config verify
 	golangci-lint run --fix
 
 # Run tests
