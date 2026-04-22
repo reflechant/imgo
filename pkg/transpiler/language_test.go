@@ -11,24 +11,38 @@ import (
 )
 
 // Language tests: the primary suite for ImGo semantics. Each case is a bare
-// body snippet (no package/main/import wrapper) plus either:
+// body snippet (no package/main/import wrapper) plus:
 //
-//   - observe + want: harness appends `fmt.Printf("name=%v\n", name)` for
-//     each observed identifier, then compares the full stdout to want.
+//   - want: expected stdout, built with out(...). For observe-style tests the
+//     harness derives the Printf list from the "name=value" keys in want.
+//     For raw tests (raw: true) the snippet owns its own output.
 //
-//   - raw + want: snippet owns its own output via fmt.Println/Printf and
-//     the harness compares stdout verbatim.
-//
-// Each case wraps, rewrites, writes to a tempdir, invokes `go run`, and
-// matches the output. Slow compared to pure-unit tests, but this is the
-// only place ImGo's runtime behaviour is actually exercised.
+// All cases are transpiled upfront and compiled into a single binary
+// (one go run), keeping total wall time proportional to one compilation.
 
 type langCase struct {
-	name    string
-	src     string
-	observe []string
-	raw     bool
-	want    string
+	name string
+	src  string
+	raw  bool
+	want string
+}
+
+// out joins output lines into the expected stdout string.
+// Use instead of "a=1\nb=2\n" — write out("a=1", "b=2") instead.
+func out(lines ...string) string {
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// observeFromWant extracts the identifier names from the "name=value" lines
+// in want. The result is used to auto-append fmt.Printf statements in source().
+func observeFromWant(want string) []string {
+	var names []string
+	for line := range strings.SplitSeq(strings.TrimRight(want, "\n"), "\n") {
+		if i := strings.IndexByte(line, '='); i > 0 {
+			names = append(names, line[:i])
+		}
+	}
+	return names
 }
 
 func (tc langCase) source() string {
@@ -37,7 +51,7 @@ func (tc langCase) source() string {
 	b.WriteString(tc.src)
 	b.WriteString("\n")
 	if !tc.raw {
-		for _, name := range tc.observe {
+		for _, name := range observeFromWant(tc.want) {
 			fmt.Fprintf(&b, "fmt.Printf(%q, %s)\n", name+"=%v\n", name)
 		}
 	}
@@ -45,48 +59,13 @@ func (tc langCase) source() string {
 	return b.String()
 }
 
-func runLang(t *testing.T, tc langCase) {
-	t.Helper()
-	if !tc.raw && len(tc.observe) == 0 {
-		t.Fatal("langCase: set raw=true or provide at least one observe entry")
-	}
-
-	goSrc := rewriteSrc(t, tc.source())
-	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatalf("abs repo root: %v", err)
-	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(path, []byte(goSrc), 0o644); err != nil {
-		t.Fatalf("write main.go: %v", err)
-	}
-
-	cmd := exec.Command("go", "run", path)
-	cmd.Dir = root
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("go run failed: %v\nstderr:\n%s\nstdout:\n%s\n--- generated Go ---\n%s",
-			err, stderr.String(), stdout.String(), goSrc)
-	}
-
-	if got := stdout.String(); got != tc.want {
-		t.Errorf("output mismatch\n--- want ---\n%s--- got ---\n%s--- generated Go ---\n%s",
-			tc.want, got, goSrc)
-	}
-}
-
 func TestLanguage(t *testing.T) {
 	cases := []langCase{
 		// --- SSA / scoping ---------------------------------------------------
 		{
-			name:    "basic arithmetic",
-			src:     `x := 5; y := x + 1`,
-			observe: []string{"x", "y"},
-			want:    "x=5\ny=6\n",
+			name: "basic arithmetic",
+			src:  `x := 5; y := x + 1`,
+			want: out("x=5", "y=6"),
 		},
 		{
 			name: "rebinding produces a fresh value",
@@ -94,8 +73,7 @@ func TestLanguage(t *testing.T) {
 				x := 1
 				x := x + 10
 			`,
-			observe: []string{"x"},
-			want:    "x=11\n",
+			want: out("x=11"),
 		},
 		{
 			name: "closure captures the binding at creation time",
@@ -106,8 +84,7 @@ func TestLanguage(t *testing.T) {
 				r := f()
 				s := x
 			`,
-			observe: []string{"r", "s"},
-			want:    "r=10\ns=20\n",
+			want: out("r=10", "s=20"),
 		},
 		{
 			name: "if init does not leak to the enclosing scope",
@@ -118,8 +95,7 @@ func TestLanguage(t *testing.T) {
 				}
 				y := x
 			`,
-			observe: []string{"y"},
-			want:    "y=1\n",
+			want: out("y=1"),
 		},
 		{
 			name: "switch init does not leak",
@@ -131,8 +107,7 @@ func TestLanguage(t *testing.T) {
 				}
 				y := x
 			`,
-			observe: []string{"y"},
-			want:    "y=1\n",
+			want: out("y=1"),
 		},
 		{
 			name: "for body shadow doesn't leak",
@@ -145,8 +120,7 @@ func TestLanguage(t *testing.T) {
 				}
 				y := x
 			`,
-			observe: []string{"y"},
-			want:    "y=1\n",
+			want: out("y=1"),
 		},
 		{
 			name: "range body shadow doesn't leak",
@@ -158,8 +132,7 @@ func TestLanguage(t *testing.T) {
 				}
 				y := x
 			`,
-			observe: []string{"y"},
-			want:    "y=1\n",
+			want: out("y=1"),
 		},
 		{
 			name: "else-if init binds its own scope",
@@ -171,8 +144,7 @@ func TestLanguage(t *testing.T) {
 					r = y
 				}
 			`,
-			observe: []string{"r"},
-			want:    "r=5\n",
+			want: out("r=5"),
 		},
 
 		// --- Map literals, get, set, delete ----------------------------------
@@ -184,8 +156,7 @@ func TestLanguage(t *testing.T) {
 				b := m["b"]
 				n := len(m)
 			`,
-			observe: []string{"a", "b", "n"},
-			want:    "a=1\nb=2\nn=2\n",
+			want: out("a=1", "b=2", "n=2"),
 		},
 		{
 			name: "missing key returns the zero value",
@@ -193,8 +164,7 @@ func TestLanguage(t *testing.T) {
 				m := map[string]int{"a": 1}
 				z := m["missing"]
 			`,
-			observe: []string{"z"},
-			want:    "z=0\n",
+			want: out("z=0"),
 		},
 		{
 			name: "two-value index reports presence",
@@ -203,8 +173,7 @@ func TestLanguage(t *testing.T) {
 				v1, ok1 := m["a"]
 				v2, ok2 := m["x"]
 			`,
-			observe: []string{"v1", "ok1", "v2", "ok2"},
-			want:    "v1=1\nok1=true\nv2=0\nok2=false\n",
+			want: out("v1=1", "ok1=true", "v2=0", "ok2=false"),
 		},
 		{
 			name: "Set returns a new map, original unchanged",
@@ -215,8 +184,7 @@ func TestLanguage(t *testing.T) {
 				n1 := len(m1)
 				b := m1["b"]
 			`,
-			observe: []string{"n", "n1", "b"},
-			want:    "n=1\nn1=2\nb=2\n",
+			want: out("n=1", "n1=2", "b=2"),
 		},
 		{
 			name: "Delete returns a new map",
@@ -227,8 +195,7 @@ func TestLanguage(t *testing.T) {
 				n1 := len(m1)
 				_, ok := m1["a"]
 			`,
-			observe: []string{"n", "n1", "ok"},
-			want:    "n=2\nn1=1\nok=false\n",
+			want: out("n=2", "n1=1", "ok=false"),
 		},
 
 		// --- List literals, index, Append, slice -----------------------------
@@ -240,8 +207,7 @@ func TestLanguage(t *testing.T) {
 				b := l[2]
 				n := len(l)
 			`,
-			observe: []string{"a", "b", "n"},
-			want:    "a=10\nb=30\nn=3\n",
+			want: out("a=10", "b=30", "n=3"),
 		},
 		{
 			name: "Append returns a new list",
@@ -252,8 +218,7 @@ func TestLanguage(t *testing.T) {
 				n1 := len(l1)
 				last := l1[2]
 			`,
-			observe: []string{"n", "n1", "last"},
-			want:    "n=2\nn1=3\nlast=3\n",
+			want: out("n=2", "n1=3", "last=3"),
 		},
 		{
 			name: "slice with explicit bounds",
@@ -264,8 +229,7 @@ func TestLanguage(t *testing.T) {
 				first := s[0]
 				last := s[2]
 			`,
-			observe: []string{"n", "first", "last"},
-			want:    "n=3\nfirst=20\nlast=40\n",
+			want: out("n=3", "first=20", "last=40"),
 		},
 		{
 			name: "slice with open-ended bounds",
@@ -276,8 +240,7 @@ func TestLanguage(t *testing.T) {
 				c := len(l[:])
 				d := len(l[2:2])
 			`,
-			observe: []string{"a", "b", "c", "d"},
-			want:    "a=3\nb=3\nc=5\nd=0\n",
+			want: out("a=3", "b=3", "c=5", "d=0"),
 		},
 
 		// --- Builtins --------------------------------------------------------
@@ -289,8 +252,7 @@ func TestLanguage(t *testing.T) {
 				v1 := a[1]
 				n := len(a)
 			`,
-			observe: []string{"v0", "v1", "n"},
-			want:    "v0=1\nv1=2\nn=2\n",
+			want: out("v0=1", "v1=2", "n=2"),
 		},
 		{
 			name: "map builtins with mangled names",
@@ -302,8 +264,7 @@ func TestLanguage(t *testing.T) {
 				v := get(m, "b")
 				n := len(m)
 			`,
-			observe: []string{"v", "n"},
-			want:    "v=12\nn=1\n",
+			want: out("v=12", "n=1"),
 		},
 		{
 			name: "array get/update",
@@ -317,8 +278,7 @@ func TestLanguage(t *testing.T) {
 				n := len(a3)
 				orig := a[1]
 			`,
-			observe: []string{"v1", "v2", "v3", "n", "orig"},
-			want:    "v1=20\nv2=25\nv3=15\nn=3\norig=20\n",
+			want: out("v1=20", "v2=25", "v3=15", "n=3", "orig=20"),
 		},
 		{
 			name: "append builtin on a list",
@@ -333,8 +293,7 @@ func TestLanguage(t *testing.T) {
 				v1 := l1[2]
 				v2 := l2[4]
 			`,
-			observe: []string{"n0", "n1", "n2", "v0", "v1", "v2"},
-			want:    "n0=2\nn1=3\nn2=5\nv0=10\nv1=30\nv2=50\n",
+			want: out("n0=2", "n1=3", "n2=5", "v0=10", "v1=30", "v2=50"),
 		},
 		{
 			name: "set/get builtins on a list",
@@ -344,8 +303,7 @@ func TestLanguage(t *testing.T) {
 				v := get(l1, 1)
 				v0 := l1[0]
 			`,
-			observe: []string{"v", "v0"},
-			want:    "v=25\nv0=10\n",
+			want: out("v=25", "v0=10"),
 		},
 		{
 			name: "set/get/update/delete builtins on a map",
@@ -359,8 +317,7 @@ func TestLanguage(t *testing.T) {
 				m3 := delete(m2, "b")
 				n := len(m3)
 			`,
-			observe: []string{"v", "w", "a", "n"},
-			want:    "v=1\nw=2\na=10\nn=1\n",
+			want: out("v=1", "w=2", "a=10", "n=1"),
 		},
 		{
 			name: "two-value get builtin reports presence",
@@ -368,8 +325,7 @@ func TestLanguage(t *testing.T) {
 				m := map[string]int{"a": 1}
 				v, ok := get(m, "missing")
 			`,
-			observe: []string{"v", "ok"},
-			want:    "v=0\nok=false\n",
+			want: out("v=0", "ok=false"),
 		},
 		{
 			name: "getIn/setIn/updateIn/deleteIn walk nested maps",
@@ -387,8 +343,7 @@ func TestLanguage(t *testing.T) {
 				m4 := deleteIn(m1, "a", "b")
 				_, ok := get(m4["a"], "b")
 			`,
-			observe: []string{"v1", "v2", "v3", "v4", "ok"},
-			want:    "v1=1\nv2=2\nv3=3\nv4=11\nok=false\n",
+			want: out("v1=1", "v2=2", "v3=3", "v4=11", "ok=false"),
 		},
 		{
 			name: "builtin shadowed by local function is not rewritten",
@@ -397,8 +352,7 @@ func TestLanguage(t *testing.T) {
 				m := map[string]int{"a": 1}
 				x := set(m, "a", 7)
 			`,
-			observe: []string{"x"},
-			want:    "x=107\n",
+			want: out("x=107"),
 		},
 
 		// --- make ------------------------------------------------------------
@@ -410,8 +364,7 @@ func TestLanguage(t *testing.T) {
 				n := len(m)
 				n1 := len(m1)
 			`,
-			observe: []string{"n", "n1"},
-			want:    "n=0\nn1=1\n",
+			want: out("n=0", "n1=1"),
 		},
 		{
 			name: "make list produces an empty persistent list (size hint ignored)",
@@ -422,8 +375,7 @@ func TestLanguage(t *testing.T) {
 				n1 := len(l1)
 				first := l1[0]
 			`,
-			observe: []string{"n", "n1", "first"},
-			want:    "n=0\nn1=1\nfirst=42\n",
+			want: out("n=0", "n1=1", "first=42"),
 		},
 
 		// --- Struct builtins -------------------------------------------------
@@ -436,8 +388,7 @@ func TestLanguage(t *testing.T) {
 				b := get(p, "Y")
 				p2 := update(p, "Y", func(y int) int { return y + 10 })
 			`,
-			observe: []string{"a", "b", "p", "p2"},
-			want:    "a=1\nb=2\np={1 2}\np2={1 12}\n",
+			want: out("a=1", "b=2", "p={1 2}", "p2={1 12}"),
 		},
 
 		// --- List builtins ---------------------------------------------------
@@ -450,8 +401,7 @@ func TestLanguage(t *testing.T) {
 				first := get(l2, 0)
 				orig := get(l, 0)
 			`,
-			observe: []string{"v", "first", "orig"},
-			want:    "v=20\nfirst=99\norig=10\n",
+			want: out("v=20", "first=99", "orig=10"),
 		},
 
 		// --- Nested composite literals (PR6) ---------------------------------
@@ -467,8 +417,7 @@ func TestLanguage(t *testing.T) {
 				nb := len(m)
 				nl := len(na)
 			`,
-			observe: []string{"v", "nb", "nl"},
-			want:    "v=2\nnb=2\nnl=3\n",
+			want: out("v=2", "nb=2", "nl=3"),
 		},
 		{
 			name: "list of maps: literal creation and element access",
@@ -481,8 +430,7 @@ func TestLanguage(t *testing.T) {
 				v := m0["a"]
 				n := len(l)
 			`,
-			observe: []string{"v", "n"},
-			want:    "v=1\nn=2\n",
+			want: out("v=1", "n=2"),
 		},
 		{
 			name: "map of structs: implicit struct element gets explicit type",
@@ -496,8 +444,7 @@ func TestLanguage(t *testing.T) {
 				px := p.X
 				py := p.Y
 			`,
-			observe: []string{"px", "py"},
-			want:    "px=1\npy=2\n",
+			want: out("px=1", "py=2"),
 		},
 		{
 			name: "struct with persistent fields: type rewritten, access works",
@@ -514,8 +461,7 @@ func TestLanguage(t *testing.T) {
 				tag := c.Tags[0]
 				score := c.Scores["x"]
 			`,
-			observe: []string{"n", "tag", "score"},
-			want:    "n=2\ntag=alpha\nscore=10\n",
+			want: out("n=2", "tag=alpha", "score=10"),
 		},
 
 		// --- Expression forms ------------------------------------------------
@@ -534,8 +480,7 @@ func TestLanguage(t *testing.T) {
 					_ = a
 				}
 			`,
-			observe: []string{"y", "z", "d", "v"},
-			want:    "y=-5\nz=6\nd=5\nv=7\n",
+			want: out("y=-5", "z=6", "d=5", "v=7"),
 		},
 		{
 			name: "defer runs after the surrounding function returns",
@@ -545,7 +490,7 @@ func TestLanguage(t *testing.T) {
 				fmt.Println("after")
 			`,
 			raw:  true,
-			want: "before\nafter\ndeferred\n",
+			want: out("before", "after", "deferred"),
 		},
 
 		// --- Control flow / side-effectful output (raw) ----------------------
@@ -558,7 +503,7 @@ func TestLanguage(t *testing.T) {
 				}
 			`,
 			raw:  true,
-			want: "[0]=10\n[1]=20\n[2]=30\n",
+			want: out("[0]=10", "[1]=20", "[2]=30"),
 		},
 		{
 			name: "closure + rebind emits captured old value",
@@ -570,7 +515,7 @@ func TestLanguage(t *testing.T) {
 				fmt.Printf("shadowed=%d\n", x)
 			`,
 			raw:  true,
-			want: "captured=10\nshadowed=20\n",
+			want: out("captured=10", "shadowed=20"),
 		},
 
 		// --- Builtin Edge Cases ----------------------------------------------
@@ -584,8 +529,7 @@ func TestLanguage(t *testing.T) {
 				v2, ok2 := getIn(m, "a", "missing")
 				v3, ok3 := getIn(m, "missing", "b")
 			`,
-			observe: []string{"v1", "ok1", "v2", "ok2", "v3", "ok3"},
-			want:    "v1=1\nok1=true\nv2=0\nok2=false\nv3=0\nok3=false\n",
+			want: out("v1=1", "ok1=true", "v2=0", "ok2=false", "v3=0", "ok3=false"),
 		},
 		{
 			name: "list getIn and append multiple",
@@ -596,8 +540,7 @@ func TestLanguage(t *testing.T) {
 				n := len(l2)
 				v2 := getIn(l2, 3, 0)
 			`,
-			observe: []string{"v", "n", "v2"},
-			want:    "v=2\nn=4\nv2=7\n",
+			want: out("v=2", "n=4", "v2=7"),
 		},
 		{
 			name: "struct getIn and updateIn",
@@ -609,14 +552,73 @@ func TestLanguage(t *testing.T) {
 				o2 := updateIn(o, "I", "V", func(x int) int { return x + 5 })
 				v2 := o2.I.V
 			`,
-			observe: []string{"v", "v2"},
-			want:    "v=10\nv2=15\n",
+			want: out("v=10", "v2=15"),
 		},
 	}
 
-	for _, tc := range cases {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("abs repo root: %v", err)
+	}
+	dir := t.TempDir()
+
+	const sep = "\x1c" // ASCII File Separator — not present in any test output
+
+	// Rewrite all cases into per-case files (case0.go, case1.go, …).
+	// Separate files mean Go compiler errors include the filename
+	// (e.g. "case5.go:12: undefined x") which maps directly to the case index.
+	goSrcs := make([]string, len(cases))
+	filePaths := make([]string, 0, len(cases)+1)
+	for i, tc := range cases {
+		src := rewriteSrc(t, tc.source())
+		goSrcs[i] = src
+		// Rename func main() → func caseN() so all files share package main.
+		caseSrc := strings.Replace(src, "func main()", fmt.Sprintf("func case%d()", i), 1)
+		// Prefix with a comment identifying the case for human readers.
+		caseSrc = fmt.Sprintf("// case %d: %s\n", i, tc.name) + caseSrc
+		path := filepath.Join(dir, fmt.Sprintf("case%d.go", i))
+		if err := os.WriteFile(path, []byte(caseSrc), 0o644); err != nil {
+			t.Fatalf("write case%d.go: %v", i, err)
+		}
+		filePaths = append(filePaths, path)
+	}
+
+	// Build main.go: calls caseN(); fmt.Print(sep) for each N.
+	var mb strings.Builder
+	mb.WriteString("package main\nimport \"fmt\"\nfunc main() {\n")
+	for i := range cases {
+		fmt.Fprintf(&mb, "\tcase%d()\n\tfmt.Print(%q)\n", i, sep)
+	}
+	mb.WriteString("}\n")
+	mainPath := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(mainPath, []byte(mb.String()), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	filePaths = append(filePaths, mainPath)
+
+	// One compilation for all cases.
+	args := append([]string{"run"}, filePaths...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = root
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go run failed: %v\nstderr:\n%s\nstdout:\n%s",
+			err, stderr.String(), stdout.String())
+	}
+
+	// Split on separator; last element is "" (after the final sep).
+	parts := strings.Split(stdout.String(), sep)
+	if len(parts) < len(cases) {
+		t.Fatalf("output split produced %d parts, want at least %d", len(parts), len(cases))
+	}
+	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			runLang(t, tc)
+			if got := parts[i]; got != tc.want {
+				t.Errorf("output mismatch\n--- want ---\n%s--- got ---\n%s--- generated Go ---\n%s",
+					tc.want, got, goSrcs[i])
+			}
 		})
 	}
 }
