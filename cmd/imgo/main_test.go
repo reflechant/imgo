@@ -24,7 +24,8 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("Non-existent path", func(t *testing.T) {
-		err := run([]string{"imgo", "/non/existent/path/at/all/hopefully"})
+		tmp := t.TempDir()
+		err := run([]string{"imgo", filepath.Join(tmp, "nonexistent")})
 		if err == nil || !strings.Contains(err.Error(), "no such file or directory") {
 			t.Errorf("Expected path error, got %v", err)
 		}
@@ -93,7 +94,7 @@ func main() {}`
 			t.Fatal(err)
 		}
 
-		// Make generated file name a directory to cause create error
+		// Create a directory with the same name as expected generated file
 		genFile := filepath.Join(tmp, "test_imgo_gen.go")
 		if err := os.Mkdir(genFile, 0755); err != nil {
 			t.Fatal(err)
