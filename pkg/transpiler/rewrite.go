@@ -112,6 +112,7 @@ func (r *rewriter) define(name string, typ types.Type) string {
 	if typ != nil {
 		r.types[mangled] = typ
 	}
+
 	return mangled
 }
 
@@ -123,6 +124,7 @@ func (r *rewriter) lookup(name string) (string, bool) {
 			return m, true
 		}
 	}
+
 	return "", false
 }
 
@@ -170,6 +172,7 @@ func expandInChain(recv ast.Expr, keys []ast.Expr, tail func(x, k ast.Expr) ast.
 	for i := n - 2; i >= 0; i-- {
 		res = methodCall(targets[i], "Set", keys[i], res)
 	}
+
 	return res
 }
 
@@ -188,6 +191,7 @@ func addPersistentImport(file *ast.File) {
 	for _, decl := range file.Decls {
 		if g, ok := decl.(*ast.GenDecl); ok && g.Tok == token.IMPORT {
 			g.Specs = append(g.Specs, newImport)
+
 			return
 		}
 	}
@@ -205,13 +209,16 @@ func (r *rewriter) typ(typ ast.Expr) ast.Expr {
 	switch t := typ.(type) {
 	case *ast.MapType:
 		r.hasPersistent = true
+
 		return persistentGeneric("Map", []ast.Expr{r.typ(t.Key), r.typ(t.Value)}, t.Pos())
 	case *ast.ArrayType:
 		if t.Len == nil {
 			r.hasPersistent = true
+
 			return persistentGeneric("List", []ast.Expr{r.typ(t.Elt)}, t.Pos())
 		}
 	}
+
 	return typ
 }
 
@@ -238,6 +245,7 @@ func (r *rewriter) typeOf(x ast.Expr) types.Type {
 			return t
 		}
 	}
+
 	return typeOf(r.info, x)
 }
 
@@ -247,6 +255,7 @@ func (r *rewriter) isArrayLike(x ast.Expr) bool {
 		return false
 	}
 	_, ok := t.Underlying().(*types.Array)
+
 	return ok
 }
 
@@ -256,6 +265,7 @@ func (r *rewriter) isListLike(x ast.Expr) bool {
 		return false
 	}
 	_, ok := t.Underlying().(*types.Slice)
+
 	return ok
 }
 
@@ -265,6 +275,7 @@ func (r *rewriter) isStructLike(x ast.Expr) bool {
 		return false
 	}
 	_, ok := t.Underlying().(*types.Struct)
+
 	return ok
 }
 
@@ -275,6 +286,7 @@ func (r *rewriter) isMapLike(x ast.Expr) bool {
 		return true
 	}
 	_, ok := t.Underlying().(*types.Map)
+
 	return ok
 }
 
@@ -284,6 +296,7 @@ func (r *rewriter) defineIdent(e ast.Expr) ast.Expr {
 	if !ok || ident.Name == "_" {
 		return e
 	}
+
 	return &ast.Ident{Name: r.define(ident.Name, typeOf(r.info, ident)), NamePos: ident.Pos()}
 }
 
@@ -331,18 +344,22 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 				s.Lhs[j], _ = r.expr(lhs, false)
 			}
 		}
+
 		return s
 
 	case *ast.ExprStmt:
 		s.X, _ = r.expr(s.X, false)
+
 		return s
 	case *ast.ReturnStmt:
 		for i, expr := range s.Results {
 			s.Results[i], _ = r.expr(expr, false)
 		}
+
 		return s
 	case *ast.BlockStmt:
 		r.scoped(func() { r.block(s) })
+
 		return s
 	case *ast.IfStmt:
 		r.scoped(func() {
@@ -359,6 +376,7 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 				}
 			}
 		})
+
 		return s
 	case *ast.ForStmt:
 		r.scoped(func() {
@@ -373,6 +391,7 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 			}
 			r.block(s.Body)
 		})
+
 		return s
 	case *ast.RangeStmt:
 		s.X, _ = r.expr(s.X, false)
@@ -392,6 +411,7 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 			}
 			r.block(s.Body)
 		})
+
 		return s
 	case *ast.SwitchStmt:
 		r.scoped(func() {
@@ -403,6 +423,7 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 			}
 			r.block(s.Body)
 		})
+
 		return s
 	case *ast.TypeSwitchStmt:
 		r.scoped(func() {
@@ -412,6 +433,7 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 			s.Assign = r.stmt(s.Assign)
 			r.block(s.Body)
 		})
+
 		return s
 	case *ast.CaseClause:
 		for i, expr := range s.List {
@@ -420,12 +442,14 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 		for i, st := range s.Body {
 			s.Body[i] = r.stmt(st)
 		}
+
 		return s
 	case *ast.DeferStmt:
 		res, _ := r.expr(s.Call, false)
 		if rewritten, ok := res.(*ast.CallExpr); ok {
 			s.Call = rewritten
 		}
+
 		return s
 	case *ast.DeclStmt:
 		if d, ok := s.Decl.(*ast.GenDecl); ok {
@@ -456,8 +480,10 @@ func (r *rewriter) stmt(stmt ast.Stmt) ast.Stmt {
 				}
 			}
 		}
+
 		return s
 	}
+
 	return stmt
 }
 
@@ -470,6 +496,7 @@ func (r *rewriter) defineIdentWithType(e ast.Expr, typ types.Type) ast.Expr {
 	if t == nil {
 		t = typeOf(r.info, ident)
 	}
+
 	return &ast.Ident{Name: r.define(ident.Name, t), NamePos: ident.Pos()}
 }
 
@@ -485,16 +512,20 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 				return &ast.Ident{Name: mangled, NamePos: e.Pos()}, r.types[mangled]
 			}
 		}
+
 		return e, typeOf(r.info, e)
 	case *ast.BinaryExpr:
 		e.X, _ = r.expr(e.X, false)
 		e.Y, _ = r.expr(e.Y, false)
+
 		return e, typeOf(r.info, e)
 	case *ast.UnaryExpr:
 		e.X, _ = r.expr(e.X, false)
+
 		return e, typeOf(r.info, e)
 	case *ast.StarExpr:
 		e.X, _ = r.expr(e.X, false)
+
 		return e, typeOf(r.info, e)
 	case *ast.MapType, *ast.ArrayType:
 		return r.typ(e), typeOf(r.info, e)
@@ -502,12 +533,14 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 		return r.callExpr(e, wantTwoValues)
 	case *ast.SelectorExpr:
 		e.X, _ = r.expr(e.X, false)
+
 		return e, typeOf(r.info, e)
 	case *ast.IndexExpr:
 		x, _ := r.expr(e.X, false)
 		if r.isArrayLike(x) {
 			e.X = x
 			e.Index, _ = r.expr(e.Index, false)
+
 			return e, r.typeOf(e)
 		}
 		method := "Get"
@@ -515,6 +548,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 			method = "Lookup"
 		}
 		res := setPos(methodCall(x, method, fst(r.expr(e.Index, false))), e.Pos())
+
 		return res, typeOf(r.info, e)
 	case *ast.CompositeLit:
 		if mt, ok := e.Type.(*ast.MapType); ok {
@@ -527,6 +561,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 					res = methodCall(res, "Set", fst(r.expr(kv.Key, false)), fst(r.expr(kv.Value, false)))
 				}
 			}
+
 			return res, typeOf(r.info, e)
 		}
 		if st, ok := e.Type.(*ast.ArrayType); ok && st.Len == nil {
@@ -537,6 +572,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 			for _, el := range e.Elts {
 				res = methodCall(res, "Append", fst(r.expr(el, false)))
 			}
+
 			return res, typeOf(r.info, e)
 		}
 		// Implicit-type composite literal (e.Type == nil): the type is inferred
@@ -555,6 +591,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 								res = methodCall(res, "Set", fst(r.expr(kv.Key, false)), fst(r.expr(kv.Value, false)))
 							}
 						}
+
 						return res, typeOf(r.info, e)
 					}
 				}
@@ -567,6 +604,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 						for _, el := range e.Elts {
 							res = methodCall(res, "Append", fst(r.expr(el, false)))
 						}
+
 						return res, typeOf(r.info, e)
 					}
 				}
@@ -586,6 +624,7 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 				e.Elts[i], _ = r.expr(el, false)
 			}
 		}
+
 		return e, typeOf(r.info, e)
 	case *ast.FuncLit:
 		r.scoped(func() {
@@ -601,9 +640,11 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 			}
 			r.block(e.Body)
 		})
+
 		return e, typeOf(r.info, e)
 	case *ast.ParenExpr:
 		e.X, _ = r.expr(e.X, false)
+
 		return e, typeOf(r.info, e)
 	case *ast.SliceExpr:
 		r.hasPersistent = true
@@ -623,10 +664,12 @@ func (r *rewriter) expr(expr ast.Expr, wantTwoValues bool) (ast.Expr, types.Type
 			Fun:  persistentSel("Slice", e.Pos()),
 			Args: []ast.Expr{x, low, high},
 		}, e.Pos())
+
 		return res, typeOf(r.info, e)
 	case *ast.TypeAssertExpr:
 		e.X, _ = r.expr(e.X, false)
 		e.Type = r.typ(e.Type)
+
 		return e, typeOf(r.info, e)
 	}
 
@@ -681,6 +724,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 			}
 			if r.isMapLike(e.Args[0]) {
 				receiverType := r.typeOf(e.Args[0])
+
 				return fst(r.expr(expandMapBuiltin(name, e.Args, wantTwoValues, e.Pos()), wantTwoValues)), receiverType
 			}
 		}
@@ -693,6 +737,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 					Fun:  ast.NewIdent("len"),
 					Args: []ast.Expr{arg},
 				}, e.Pos())
+
 				return res, types.Typ[types.Int]
 			}
 			r.hasPersistent = true
@@ -700,6 +745,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 				Fun:  persistentSel("Len", e.Pos()),
 				Args: []ast.Expr{arg},
 			}, e.Pos())
+
 			return res, types.Typ[types.Int]
 		}
 		if ident.Name == "make" && len(e.Args) >= 1 {
@@ -709,6 +755,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 				res := setPos(&ast.CallExpr{
 					Fun: persistentGeneric("NewMap", []ast.Expr{r.typ(typ.Key), r.typ(typ.Value)}, e.Pos()),
 				}, e.Pos())
+
 				return res, typeOf(r.info, typ)
 			case *ast.ArrayType:
 				if typ.Len == nil {
@@ -716,6 +763,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 					res := setPos(&ast.CallExpr{
 						Fun: persistentGeneric("NewList", []ast.Expr{r.typ(typ.Elt)}, e.Pos()),
 					}, e.Pos())
+
 					return res, typeOf(r.info, typ)
 				}
 			}
@@ -755,6 +803,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 				return expanded, receiverType
 			}
 		}
+
 		return e, typeOf(r.info, e)
 	}
 
@@ -772,6 +821,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 		res := setPos(expandInChain(receiver, keys, func(x, k ast.Expr) ast.Expr {
 			return methodCall(x, "Set", k, value)
 		}), e.Pos())
+
 		return res, typeOf(r.info, e)
 	case "UpdateIn":
 		if len(e.Args) < 2 {
@@ -782,6 +832,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 		res := setPos(expandInChain(receiver, keys, func(x, k ast.Expr) ast.Expr {
 			return methodCall(x, "Update", k, fn)
 		}), e.Pos())
+
 		return res, typeOf(r.info, e)
 	case "DeleteIn":
 		if len(e.Args) == 0 {
@@ -790,8 +841,10 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 		res := setPos(expandInChain(receiver, e.Args, func(x, k ast.Expr) ast.Expr {
 			return methodCall(x, "Delete", k)
 		}), e.Pos())
+
 		return res, typeOf(r.info, e)
 	}
+
 	return e, typeOf(r.info, e)
 }
 
@@ -809,5 +862,6 @@ func setPos(n ast.Expr, pos token.Pos) ast.Expr {
 	case *ast.IndexListExpr:
 		e.Lbrack = pos
 	}
+
 	return n
 }

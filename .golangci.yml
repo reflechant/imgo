@@ -4,30 +4,26 @@ run:
   timeout: 5m
 
 linters:
-  enable:
-    - exhaustive
-    - errorlint
+  default: all
+  disable:
+    - depguard
+    - exhaustruct
     - forcetypeassert
-    - predeclared
-    - nilerr
-    - nilnesserr
-    - gochecksumtype
-    - asciicheck
-    - revive
+    - funlen
+    - gochecknoglobals
+    - godot
+    - godox
     - lll
-    - modernize
-    - intrange
-    - exptostd
-    - copyloopvar
-    - unconvert
-    - misspell
-  settings:
-    exhaustive:
-      default-signifies-exhaustive: false
-    lll:
-      line-length: 120
+    - tagliatelle
+    - testpackage
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - wsl_v5
 
 formatters:
   enable:
+    - gci
     - gofmt
+    - gofumpt
     - goimports

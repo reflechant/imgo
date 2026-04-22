@@ -93,7 +93,9 @@ func Validate(fset *token.FileSet, file *ast.File, info *types.Info) error {
 					"three-index slice 'a[low:high:max]' is prohibited in ImGo; capacity has no persistent analog")
 			}
 		}
+
 		return true
 	})
+
 	return v.diags.asError()
 }

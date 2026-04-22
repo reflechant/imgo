@@ -42,6 +42,7 @@ func observeFromWant(want string) []string {
 			names = append(names, line[:i])
 		}
 	}
+
 	return names
 }
 
@@ -56,6 +57,7 @@ func (tc langCase) source() string {
 		}
 	}
 	b.WriteString("}\n")
+
 	return b.String()
 }
 
@@ -577,7 +579,8 @@ func TestLanguage(t *testing.T) {
 		// Prefix with a comment identifying the case for human readers.
 		caseSrc = fmt.Sprintf("// case %d: %s\n", i, tc.name) + caseSrc
 		path := filepath.Join(dir, fmt.Sprintf("case%d.go", i))
-		if err := os.WriteFile(path, []byte(caseSrc), 0o644); err != nil {
+		err := os.WriteFile(path, []byte(caseSrc), 0o644)
+		if err != nil {
 			t.Fatalf("write case%d.go: %v", i, err)
 		}
 		filePaths = append(filePaths, path)

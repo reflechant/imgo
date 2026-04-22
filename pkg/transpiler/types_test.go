@@ -52,6 +52,7 @@ func main() {
 				mIdent = id
 			}
 		}
+
 		return true
 	})
 
@@ -102,6 +103,7 @@ func main() {
 				sIdent = id
 			}
 		}
+
 		return true
 	})
 
@@ -170,16 +172,19 @@ func TestTypeExprFor(t *testing.T) {
 				if expr != nil {
 					t.Errorf("expected nil for %s, got %T", tc.name, expr)
 				}
+
 				return
 			}
 			if expr == nil {
 				t.Errorf("expected %s, got nil", tc.want)
+
 				return
 			}
 
 			fset := token.NewFileSet()
 			var buf strings.Builder
-			if err := printer.Fprint(&buf, fset, expr); err != nil {
+			err := printer.Fprint(&buf, fset, expr)
+			if err != nil {
 				t.Fatal(err)
 			}
 			if got := buf.String(); got != tc.want {

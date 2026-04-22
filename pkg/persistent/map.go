@@ -16,6 +16,7 @@ func (m Map[K, V]) Len() int {
 	if m.inner == nil {
 		return 0
 	}
+
 	return m.inner.Len()
 }
 
@@ -29,6 +30,7 @@ func (m Map[K, V]) Set(k K, v V) Map[K, V] {
 	if m.inner == nil {
 		return Map[K, V]{inner: immutable.NewMap[K, V](nil).Set(k, v)}
 	}
+
 	return Map[K, V]{inner: m.inner.Set(k, v)}
 }
 
@@ -36,14 +38,17 @@ func (m Map[K, V]) Set(k K, v V) Map[K, V] {
 func (m Map[K, V]) Lookup(k K) (V, bool) {
 	if m.inner == nil {
 		var zero V
+
 		return zero, false
 	}
+
 	return m.inner.Get(k)
 }
 
 // Get returns only the value, or zero value if not found (1-value return).
 func (m Map[K, V]) Get(k K) V {
 	v, _ := m.Lookup(k)
+
 	return v
 }
 
@@ -52,12 +57,14 @@ func (m Map[K, V]) Delete(k K) Map[K, V] {
 	if m.inner == nil {
 		return m
 	}
+
 	return Map[K, V]{inner: m.inner.Delete(k)}
 }
 
 // Update returns a new map with the value for key k replaced by the result of fn.
 func (m Map[K, V]) Update(k K, fn func(V) V) Map[K, V] {
 	v := m.Get(k)
+
 	return m.Set(k, fn(v))
 }
 
@@ -129,6 +136,7 @@ func (m Map[K, V]) SetIn(path []K, value V) Map[K, V] {
 	}
 
 	newSub, _ := any(subMap.SetIn(path[1:], value)).(V)
+
 	return m.Set(path[0], newSub)
 }
 
@@ -139,6 +147,7 @@ func (m Map[K, V]) UpdateIn(path []K, fn func(V) V) Map[K, V] {
 	}
 	if len(path) == 1 {
 		val := m.Get(path[0])
+
 		return m.Set(path[0], fn(val))
 	}
 
@@ -153,6 +162,7 @@ func (m Map[K, V]) UpdateIn(path []K, fn func(V) V) Map[K, V] {
 	}
 
 	newSub, _ := any(subMap.UpdateIn(path[1:], fn)).(V)
+
 	return m.Set(path[0], newSub)
 }
 
@@ -179,5 +189,6 @@ func (m Map[K, V]) DeleteIn(path []K) Map[K, V] {
 	}
 
 	newSub, _ := any(subMap.DeleteIn(path[1:])).(V)
+
 	return m.Set(path[0], newSub)
 }

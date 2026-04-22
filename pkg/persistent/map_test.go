@@ -104,6 +104,7 @@ func TestMap(t *testing.T) {
 		count := 0
 		for range m.All() {
 			count++
+
 			break
 		}
 		if count != 1 {
@@ -143,6 +144,7 @@ func TestMap(t *testing.T) {
 		count := 0
 		for range m.Keys() {
 			count++
+
 			break
 		}
 		if count != 1 {
@@ -152,6 +154,7 @@ func TestMap(t *testing.T) {
 		count = 0
 		for range m.Values() {
 			count++
+
 			break
 		}
 		if count != 1 {
@@ -199,6 +202,7 @@ func TestMap(t *testing.T) {
 
 		m3 := m2.UpdateIn([]string{"a", "b"}, func(v any) any {
 			vInt, _ := v.(int)
+
 			return vInt + 8
 		})
 		val = m3.Get("a")

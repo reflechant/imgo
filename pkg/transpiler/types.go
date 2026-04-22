@@ -25,6 +25,7 @@ func typeCheck(fset *token.FileSet, file *ast.File) *types.Info {
 		Error:    func(error) {},
 	}
 	_, _ = conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
+
 	return info
 }
 
@@ -38,6 +39,7 @@ func typeOf(info *types.Info, x ast.Expr) types.Type {
 	if !ok {
 		return nil
 	}
+
 	return tv.Type
 }
 
@@ -50,6 +52,7 @@ func isMapLike(info *types.Info, x ast.Expr) bool {
 		return true
 	}
 	_, ok := t.Underlying().(*types.Map)
+
 	return ok
 }
 
@@ -60,6 +63,7 @@ func isArrayLike(info *types.Info, x ast.Expr) bool {
 		return false
 	}
 	_, ok := t.Underlying().(*types.Array)
+
 	return ok
 }
 
@@ -83,18 +87,21 @@ func typeExprFor(t types.Type) ast.Expr {
 		// emits the identifier, which works only for the current package or
 		// for predeclared types.
 		obj := tt.Obj()
+
 		return ast.NewIdent(obj.Name())
 	case *types.Pointer:
 		inner := typeExprFor(tt.Elem())
 		if inner == nil {
 			return nil
 		}
+
 		return &ast.StarExpr{X: inner}
 	case *types.Array:
 		inner := typeExprFor(tt.Elem())
 		if inner == nil {
 			return nil
 		}
+
 		return &ast.ArrayType{
 			Len: &ast.BasicLit{Kind: token.INT, Value: strconv.FormatInt(tt.Len(), 10)},
 			Elt: inner,
@@ -104,6 +111,7 @@ func typeExprFor(t types.Type) ast.Expr {
 		if inner == nil {
 			return nil
 		}
+
 		return &ast.ArrayType{Elt: inner}
 	case *types.Map:
 		keyExpr := typeExprFor(tt.Key())
@@ -111,9 +119,11 @@ func typeExprFor(t types.Type) ast.Expr {
 		if keyExpr == nil || valExpr == nil {
 			return nil
 		}
+
 		return &ast.MapType{Key: keyExpr, Value: valExpr}
 	case *types.Basic:
 		return ast.NewIdent(tt.Name())
 	}
+
 	return nil
 }

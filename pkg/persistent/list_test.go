@@ -134,6 +134,7 @@ func TestList(t *testing.T) {
 		count := 0
 		for range l.All() {
 			count++
+
 			break
 		}
 		if count != 1 {
@@ -161,6 +162,7 @@ func TestList(t *testing.T) {
 		count := 0
 		for range l.Values() {
 			count++
+
 			break
 		}
 		if count != 1 {

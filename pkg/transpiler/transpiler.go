@@ -14,8 +14,10 @@ import (
 // 3. Rewrites the AST to use persistent data structures and SSA mangling.
 func Transpile(fset *token.FileSet, file *ast.File) (*ast.File, error) {
 	info := typeCheck(fset, file)
-	if err := Validate(fset, file, info); err != nil {
+	err := Validate(fset, file, info)
+	if err != nil {
 		return nil, err
 	}
+
 	return Rewrite(file, info), nil
 }

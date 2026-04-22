@@ -46,6 +46,7 @@ func expandMapBuiltin(name string, args []ast.Expr, wantTwoValues bool, pos toke
 		if wantTwoValues {
 			method = "Lookup"
 		}
+
 		return setPos(&ast.CallExpr{
 			Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)},
 			Args: rest,
@@ -65,6 +66,7 @@ func expandMapBuiltin(name string, args []ast.Expr, wantTwoValues bool, pos toke
 				Args: []ast.Expr{k},
 			}
 		}
+
 		return setPos(res, pos)
 	}
 
@@ -101,6 +103,7 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 				Args: []ast.Expr{k},
 			}
 		}
+
 		return setPos(res, pos)
 	case "set", "setIn", "update", "updateIn":
 		// Same shape as map dispatch; the existing rewriter handles
@@ -117,8 +120,10 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 				Args: []ast.Expr{arg},
 			}
 		}
+
 		return setPos(res, pos)
 	}
+
 	return nil
 }
 
@@ -147,8 +152,10 @@ func expandArrayBuiltin(
 		fn := exprRewriter(rest[1])
 		paramName := "__a"
 		body := arrayUpdateBody(paramName, index, fn)
+
 		return setPos(buildIIFE(paramName, typeExpr, body, receiver), pos)
 	}
+
 	return nil
 }
 
@@ -157,6 +164,7 @@ func arrayUpdateBody(param string, index ast.Expr, fn ast.Expr) []ast.Stmt {
 	lhs := &ast.IndexExpr{X: ast.NewIdent(param), Index: index}
 	rhsArg := &ast.IndexExpr{X: ast.NewIdent(param), Index: index}
 	rhs := &ast.CallExpr{Fun: fn, Args: []ast.Expr{rhsArg}}
+
 	return []ast.Stmt{&ast.AssignStmt{
 		Lhs: []ast.Expr{lhs},
 		Tok: token.ASSIGN,
@@ -194,6 +202,7 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 		if !ok {
 			return nil
 		}
+
 		return setPos(&ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(field)}, pos)
 
 	case "getIn":
@@ -205,6 +214,7 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 			}
 			res = &ast.SelectorExpr{X: res, Sel: ast.NewIdent(field)}
 		}
+
 		return setPos(res, pos)
 
 	case "update":
@@ -219,6 +229,7 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 		// Build: func(__s T) T { __s.F = fn(__s.F); return __s }(receiver)
 		paramName := "__s"
 		body := updateBody(paramName, []string{field}, fn, typeExpr)
+
 		return setPos(buildIIFE(paramName, typeExpr, body, receiver), pos)
 
 	case "updateIn":
@@ -239,8 +250,10 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 		fn := args[n-1]
 		paramName := "__s"
 		body := updateBody(paramName, fields, fn, typeExpr)
+
 		return setPos(buildIIFE(paramName, typeExpr, body, receiver), pos)
 	}
+
 	return nil
 }
 
@@ -256,6 +269,7 @@ func stringLitField(e ast.Expr) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+
 	return v, true
 }
 
@@ -266,6 +280,7 @@ func buildIIFE(param string, typeExpr ast.Expr, bodyStmts []ast.Stmt, arg ast.Ex
 	stmts = append(stmts, &ast.ReturnStmt{
 		Results: []ast.Expr{ast.NewIdent(param)},
 	})
+
 	return &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
@@ -299,6 +314,7 @@ func updateBody(param string, fields []string, fn ast.Expr, _ ast.Expr) []ast.St
 		rhsArg = &ast.SelectorExpr{X: rhsArg, Sel: ast.NewIdent(f)}
 	}
 	rhs := &ast.CallExpr{Fun: fn, Args: []ast.Expr{rhsArg}}
+
 	return []ast.Stmt{&ast.AssignStmt{
 		Lhs: []ast.Expr{lhs},
 		Tok: token.ASSIGN,
@@ -315,5 +331,6 @@ func isShadowed(env []map[string]string, name string) bool {
 			return true
 		}
 	}
+
 	return false
 }

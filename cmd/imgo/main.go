@@ -18,7 +18,8 @@ import (
 )
 
 func main() {
-	if err := run(os.Args); err != nil {
+	err := run(os.Args)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -41,9 +42,9 @@ func run(args []string) error {
 			return nil
 		}
 		files = append(files, path)
+
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
@@ -65,7 +66,8 @@ func run(args []string) error {
 	for range numWorkers {
 		wg.Go(func() {
 			for path := range filesCh {
-				if err := processFile(fset, path); err != nil {
+				err := processFile(fset, path)
+				if err != nil {
 					errCh <- err
 				}
 			}
@@ -117,5 +119,6 @@ func processFile(fset *token.FileSet, path string) error {
 	}
 
 	fmt.Printf("Generated: %s\n", newPath)
+
 	return nil
 }

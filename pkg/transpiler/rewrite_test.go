@@ -17,6 +17,7 @@ func wrap(src string) string {
 	if strings.HasPrefix(strings.TrimSpace(src), "package") {
 		return src
 	}
+
 	return "package main\nfunc main() {\n" + src + "\n}\n"
 }
 
@@ -32,6 +33,7 @@ func rewriteSrc(t *testing.T, src string) string {
 	f = Rewrite(f, typeCheck(fset, f))
 	var buf bytes.Buffer
 	_ = printer.Fprint(&buf, fset, f)
+
 	return buf.String()
 }
 

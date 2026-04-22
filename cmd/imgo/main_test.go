@@ -38,7 +38,7 @@ func TestRun(t *testing.T) {
 func main() {
 	println("hello")
 }`
-		if err := os.WriteFile(imFile, []byte(code), 0644); err != nil {
+		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -60,7 +60,7 @@ func main() {
 func main() {
 	println("hello"
 }`
-		if err := os.WriteFile(imFile, []byte(code), 0644); err != nil {
+		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -75,7 +75,7 @@ func main() {
 		imFile := filepath.Join(tmp, "test.im")
 		// Not a valid Go file at all
 		code := `not a package`
-		if err := os.WriteFile(imFile, []byte(code), 0644); err != nil {
+		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -90,13 +90,13 @@ func main() {
 		imFile := filepath.Join(tmp, "test.im")
 		code := `package main
 func main() {}`
-		if err := os.WriteFile(imFile, []byte(code), 0644); err != nil {
+		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
 		// Create a directory with the same name as expected generated file
 		genFile := filepath.Join(tmp, "test_imgo_gen.go")
-		if err := os.Mkdir(genFile, 0755); err != nil {
+		if err := os.Mkdir(genFile, 0o755); err != nil {
 			t.Fatal(err)
 		}
 

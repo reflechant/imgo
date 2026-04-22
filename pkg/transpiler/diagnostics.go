@@ -46,6 +46,7 @@ func (ds Diagnostics) Error() string {
 		}
 		b.WriteString(d.Error())
 	}
+
 	return b.String()
 }
 
@@ -54,5 +55,6 @@ func (ds Diagnostics) asError() error {
 	if len(ds) == 0 {
 		return nil
 	}
+
 	return ds
 }

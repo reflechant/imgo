@@ -4,8 +4,10 @@
             (fs/delete-if-exists "coverage.out"))
   build (shell "go build -v -o imgo ./cmd/imgo")
   fmt (shell "go fmt ./...")
-  lint (do (shell "golangci-lint config verify")
+  lint-fix (do (shell "golangci-lint config verify")
            (shell "golangci-lint run --fix"))
+  lint (do (shell "golangci-lint config verify")
+               (shell "golangci-lint run"))
   test (shell "go test"
               "-v"
               "-race"
