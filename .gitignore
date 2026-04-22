@@ -19,6 +19,10 @@ obj/
 vendor/
 .deps/
 
+# Clojure-related
+.lsp/
+.clj-kondo/
+
 # Test coverage
 *.out
 *.prof

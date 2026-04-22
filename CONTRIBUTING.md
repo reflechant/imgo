@@ -7,7 +7,7 @@ Thank you for your interest in ImGo! As a language that values deep immutability
 1.  **Spec First:** All language changes must be reflected in `docs/SPEC.md` first.
 2.  **100% Coverage:** The transpiler core (`rewrite.go` and `validator.go`) **must** maintain 100% statement coverage.
 3.  **Integration Tests:** Every new feature must include a corresponding `.im` fixture in `pkg/transpiler/testdata/` with expected output markers.
-
+- **Full Validation:** ALL changes MUST pass `bb validate`.
 ## Setting Up Your Environment
 
 ```bash
@@ -17,10 +17,10 @@ git clone https://github.com/rg/imgo.git
 cd imgo
 
 # Build the tool
-go build -o imgo ./cmd/imgo
+bb build
 
 # Run tests
-go test ./...
+bb test
 ```
 
 ## Pull Request Process

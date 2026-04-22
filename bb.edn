@@ -1,0 +1,17 @@
+{:tasks
+ {:requires ([babashka.fs :as fs])
+  clean (do (fs/delete-if-exists "imgo")
+            (fs/delete-if-exists "coverage.out"))
+  build (shell "go build -v -o imgo ./cmd/imgo")
+  fmt (shell "go fmt ./...")
+  lint (do (shell "golangci-lint config verify")
+           (shell "golangci-lint run --fix"))
+  test (shell "go test"
+              "-v"
+              "-race"
+              "-count=1"
+              "-coverprofile=coverage.out"
+              "./...")
+  check-coverage {:depends [test]
+                  :task (shell "bb scripts/check_coverage.clj")}
+  validate {:depends [lint build test check-coverage]}}}
