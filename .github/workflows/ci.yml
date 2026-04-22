@@ -43,24 +43,12 @@ jobs:
       - name: Run Tests
         run: go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Check Coverage Gate (100% for Core)
-        run: |
-          # Use awk to calculate total statement coverage for specific files.
-          # This handles files with multiple functions correctly.
-          check_coverage() {
-            local file=$1
-            local expected=$2
-            # Extract coverage % from go tool cover -func output for the file
-            local actual=$(go tool cover -func=coverage.out | grep "$file" | awk '{sum+=$NF; count++} END {if (count > 0) printf "%.1f%%", sum/count}')
-            echo "$file coverage: $actual (expected $expected)"
-            if [[ "$actual" != "$expected" ]]; then
-              echo "ERROR: $file must have $expected coverage."
-              exit 1
-            fi
-          }
+      - uses: DeLaGuardo/setup-clojure@13
+        with:
+          bb: latest
 
-          check_coverage "rewrite.go" "100.0%"
-          check_coverage "validator.go" "100.0%"
+      - name: Check Coverage Gate (100% for Core)
+        run: bb scripts/check_coverage.clj
 
       - name: Upload Coverage report
         uses: actions/upload-artifact@v4
