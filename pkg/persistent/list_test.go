@@ -5,7 +5,9 @@ import (
 )
 
 func TestList(t *testing.T) {
+	t.Parallel()
 	t.Run("NewList", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]()
 		if l.Len() != 0 {
 			t.Errorf("Expected len 0, got %d", l.Len())
@@ -13,6 +15,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Append and Get", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]()
 		l2 := l.Append(1).Append(2)
 		if l.Len() != 0 {
@@ -30,6 +33,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Set", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]().Append(1).Append(2)
 		l2 := l.Set(0, 10)
 		if l.Get(0) != 1 {
@@ -41,6 +45,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Nil handling (Nil punning)", func(t *testing.T) {
+		t.Parallel()
 		var l List[int]
 		if l.Len() != 0 {
 			t.Errorf("Nil list should have len 0, got %d", l.Len())
@@ -55,6 +60,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Panic on out of bounds Get", func(t *testing.T) {
+		t.Parallel()
 		defer func() {
 			if r := recover(); r == nil {
 				t.Errorf("Expected panic on out of bounds Get, but did not")
@@ -65,6 +71,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Panic on out of bounds Set", func(t *testing.T) {
+		t.Parallel()
 		defer func() {
 			if r := recover(); r == nil {
 				t.Errorf("Expected panic on out of bounds Set, but did not")
@@ -75,6 +82,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Slice", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]().Append(10).Append(20).Append(30).Append(40)
 
 		s := Slice(l, 1, 3)
@@ -97,6 +105,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Slice on nil list", func(t *testing.T) {
+		t.Parallel()
 		var l List[int]
 		s := Slice(l, 0, 0)
 		if s.Len() != 0 {
@@ -105,6 +114,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Slice on nil list panics on non-zero bounds", func(t *testing.T) {
+		t.Parallel()
 		defer func() {
 			if r := recover(); r == nil {
 				t.Errorf("expected panic on out-of-range slice of nil list")
@@ -115,6 +125,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("AllList iterator", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]().Append(1).Append(2).Append(3)
 		var sum int
 		for _, v := range l.All() {
@@ -143,6 +154,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("Values iterator", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]().Append(10).Append(20).Append(30)
 		var sum int
 		for v := range l.Values() {

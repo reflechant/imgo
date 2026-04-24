@@ -3,7 +3,9 @@ package persistent
 import "testing"
 
 func TestUtil(t *testing.T) {
+	t.Parallel()
 	t.Run("Len helper", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]().Set("a", 1)
 		if Len(m) != 1 {
 			t.Errorf("Expected 1, got %d", Len(m))

@@ -9,6 +9,7 @@ import (
 )
 
 func TestValidate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		code    string
@@ -391,6 +392,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			fset := token.NewFileSet()
 			f, err := parser.ParseFile(fset, "test.im", tt.code, 0)
 			if err != nil {
@@ -415,6 +417,7 @@ func main() {
 }
 
 func TestValidateAccumulatesDiagnostics(t *testing.T) {
+	t.Parallel()
 	code := `package main
 func main() {
 	x := 5
@@ -457,6 +460,7 @@ func main() {
 }
 
 func TestDiagnosticFormat(t *testing.T) {
+	t.Parallel()
 	code := `package main
 func main() {
 	x := 5
@@ -479,6 +483,7 @@ func main() {
 }
 
 func TestEmptyDiagnostics(t *testing.T) {
+	t.Parallel()
 	var ds Diagnostics
 	if got := ds.Error(); got != "" {
 		t.Errorf("empty Diagnostics.Error() = %q, want empty", got)

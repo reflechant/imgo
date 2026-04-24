@@ -6,31 +6,39 @@ import (
 	"strconv"
 )
 
+const (
+	builtinGet    = "get"
+	builtinGetIn  = "getIn"
+	builtinUpdate = "update"
+	methodGet     = "Get"
+	methodLookup  = "Lookup"
+)
+
 // imgoBuiltins lists the value-update builtin names recognized in ImGo
 // source. They are not Go builtins; the rewriter lowers each call into a
 // receiver-appropriate method or expression chain.
 var imgoBuiltins = map[string]bool{
-	"get":      true,
-	"getIn":    true,
-	"set":      true,
-	"setIn":    true,
-	"update":   true,
-	"updateIn": true,
-	"delete":   true,
-	"deleteIn": true,
-	"append":   true,
+	builtinGet:    true,
+	builtinGetIn:  true,
+	"set":         true,
+	"setIn":       true,
+	builtinUpdate: true,
+	"updateIn":    true,
+	"delete":      true,
+	"deleteIn":    true,
+	"append":      true,
 }
 
 // mapBuiltinMethod maps a single-key builtin name to the equivalent
 // method on persistent.Map. Multi-key forms (setIn/updateIn/deleteIn)
 // have their own method names that the existing rewriter expands further.
 var mapBuiltinMethod = map[string]string{
-	"set":      "Set",
-	"update":   "Update",
-	"delete":   "Delete",
-	"setIn":    "SetIn",
-	"updateIn": "UpdateIn",
-	"deleteIn": "DeleteIn",
+	"set":         "Set",
+	builtinUpdate: "Update",
+	"delete":      "Delete",
+	"setIn":       "SetIn",
+	"updateIn":    "UpdateIn",
+	"deleteIn":    "DeleteIn",
 }
 
 // expandMapBuiltin translates a builtin call with a map receiver into
@@ -41,10 +49,10 @@ func expandMapBuiltin(name string, args []ast.Expr, wantTwoValues bool, pos toke
 	receiver := args[0]
 	rest := args[1:]
 
-	if name == "get" {
-		method := "Get"
+	if name == builtinGet {
+		method := methodGet
 		if wantTwoValues {
-			method = "Lookup"
+			method = methodLookup
 		}
 
 		return setPos(&ast.CallExpr{
@@ -53,13 +61,13 @@ func expandMapBuiltin(name string, args []ast.Expr, wantTwoValues bool, pos toke
 		}, pos)
 	}
 
-	if name == "getIn" {
+	if name == builtinGetIn {
 		res := receiver
 		for i, k := range rest {
-			method := "Get"
+			method := methodGet
 			// Two-value form only applies to the final lookup of the chain.
 			if wantTwoValues && i == len(rest)-1 {
-				method = "Lookup"
+				method = methodLookup
 			}
 			res = &ast.CallExpr{
 				Fun:  &ast.SelectorExpr{X: res, Sel: ast.NewIdent(method)},
@@ -89,23 +97,23 @@ func expandListBuiltin(name string, args []ast.Expr, pos token.Pos) ast.Expr {
 	rest := args[1:]
 
 	switch name {
-	case "get":
+	case builtinGet:
 		// Lists always succeed at indexing (panic on OOB); no two-value form.
 		return setPos(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent("Get")},
+			Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(methodGet)},
 			Args: rest,
 		}, pos)
-	case "getIn":
+	case builtinGetIn:
 		res := receiver
 		for _, k := range rest {
 			res = &ast.CallExpr{
-				Fun:  &ast.SelectorExpr{X: res, Sel: ast.NewIdent("Get")},
+				Fun:  &ast.SelectorExpr{X: res, Sel: ast.NewIdent(methodGet)},
 				Args: []ast.Expr{k},
 			}
 		}
 
 		return setPos(res, pos)
-	case "set", "setIn", "update", "updateIn":
+	case "set", "setIn", builtinUpdate, "updateIn":
 		// Same shape as map dispatch; the existing rewriter handles
 		// the SetIn/UpdateIn expansion uniformly.
 		return setPos(&ast.CallExpr{
@@ -141,11 +149,15 @@ func expandArrayBuiltin(
 	rest := args[1:]
 
 	switch name {
-	case "get":
+	case builtinGet:
+		if len(rest) == 0 {
+			return nil
+		}
+
 		return setPos(&ast.IndexExpr{X: receiver, Index: exprRewriter(rest[0])}, pos)
 
-	case "update":
-		if typeExpr == nil {
+	case builtinUpdate:
+		if typeExpr == nil || len(rest) < 2 {
 			return nil
 		}
 		index := exprRewriter(rest[0])
@@ -197,7 +209,10 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 	receiver := args[0]
 
 	switch name {
-	case "get":
+	case builtinGet:
+		if len(args) < 2 { //nolint:mnd
+			return nil
+		}
 		field, ok := stringLitField(args[1])
 		if !ok {
 			return nil
@@ -205,7 +220,7 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 
 		return setPos(&ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(field)}, pos)
 
-	case "getIn":
+	case builtinGetIn:
 		res := receiver
 		for _, key := range args[1:] {
 			field, ok := stringLitField(key)
@@ -217,8 +232,8 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 
 		return setPos(res, pos)
 
-	case "update":
-		if typeExpr == nil {
+	case builtinUpdate:
+		if typeExpr == nil || len(args) < 3 {
 			return nil
 		}
 		field, ok := stringLitField(args[1])
@@ -235,11 +250,12 @@ func expandStructBuiltin(name string, args []ast.Expr, typeExpr ast.Expr, pos to
 	case "updateIn":
 		// updateIn(receiver, k1, k2, ..., fn) — all keys must be string
 		// literals (struct field names). The receiver type must be known.
-		if typeExpr == nil {
+		if typeExpr == nil || len(args) < 2 {
 			return nil
 		}
 		n := len(args)
-		fields := make([]string, 0, n-2)
+		keyCount := n - 2 //nolint:mnd
+		fields := make([]string, 0, keyCount)
 		for _, k := range args[1 : n-1] {
 			f, ok := stringLitField(k)
 			if !ok {

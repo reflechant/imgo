@@ -22,6 +22,8 @@ const (
 
 // Diagnostic is a single validation error carrying enough position
 // information to point a user at the offending source.
+//
+//nolint:errname
 type Diagnostic struct {
 	Pos     token.Position
 	Code    string
@@ -35,6 +37,8 @@ func (d Diagnostic) Error() string {
 
 // Diagnostics is a list of Diagnostic that implements the error interface.
 // An empty Diagnostics should be returned as nil by callers (see asError).
+//
+//nolint:errname
 type Diagnostics []Diagnostic
 
 // Error implements the error interface, joining all diagnostics into a single string.

@@ -11,6 +11,7 @@ import (
 )
 
 func TestIsMapLike(t *testing.T) {
+	t.Parallel()
 	dummy := ast.NewIdent("x")
 
 	if !isMapLike(nil, dummy) {
@@ -68,6 +69,7 @@ func main() {
 }
 
 func TestIsArrayLike(t *testing.T) {
+	t.Parallel()
 	dummy := ast.NewIdent("x")
 
 	if isArrayLike(nil, dummy) {
@@ -119,6 +121,7 @@ func main() {
 }
 
 func TestTypeExprFor(t *testing.T) {
+	t.Parallel()
 	pkg := types.NewPackage("main", "main")
 	typeName := types.NewTypeName(token.NoPos, pkg, "S", nil)
 	named := types.NewNamed(typeName, types.NewStruct(nil, nil), nil)
@@ -167,6 +170,7 @@ func TestTypeExprFor(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			expr := typeExprFor(tc.typ)
 			if tc.want == "" {
 				if expr != nil {

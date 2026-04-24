@@ -50,9 +50,10 @@ func assertContainsAll(t *testing.T, got string, wants ...string) {
 
 // TestRewrite focuses on the *shape* of the rewriter's Go output — mangled
 // identifier names, method choice (Get vs Lookup), desugaring to persistent
-// calls. Semantic coverage (does the generated Go actually produce the right
+// Semantic coverage (does the generated Go actually produce the right
 // result at runtime?) lives in TestLanguage.
 func TestRewrite(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -484,6 +485,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assertContainsAll(t, rewriteSrc(t, tt.input), tt.want...)
 		})
 	}
@@ -493,6 +495,7 @@ func main() {
 // — nil inputs, synthetic AST nodes built by hand, coverage corners. These
 // drive the rewriter directly rather than through ImGo source.
 func TestRewriteEdgeCases(t *testing.T) {
+	t.Parallel()
 	newR := func() *rewriter {
 		return &rewriter{
 			env:      []map[string]string{make(map[string]string)},

@@ -5,7 +5,9 @@ import (
 )
 
 func TestMap(t *testing.T) {
+	t.Parallel()
 	t.Run("NewMap", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]()
 		if m.Len() != 0 {
 			t.Errorf("Expected len 0, got %d", m.Len())
@@ -13,6 +15,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("Set and Lookup/Get", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]()
 		m2 := m.Set("a", 1).Set("b", 2)
 		if m.Len() != 0 {
@@ -36,6 +39,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("Delete", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]().Set("a", 1).Set("b", 2)
 		m2 := m.Delete("a")
 		if m.Len() != 2 {
@@ -56,6 +60,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("Update", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]().Set("a", 1)
 		m2 := m.Update("a", func(v int) int { return v + 10 })
 		v := m2.Get("a")
@@ -65,6 +70,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("Nil handling (Nil punning)", func(t *testing.T) {
+		t.Parallel()
 		var m Map[string, int]
 		if m.Len() != 0 {
 			t.Errorf("Nil map should have len 0, got %d", m.Len())
@@ -85,6 +91,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("All() iterator", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]().Set("a", 1).Set("b", 2)
 		var sum int
 		for _, v := range m.All() {
@@ -113,6 +120,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("Keys and Values iterators", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]().Set("a", 1).Set("b", 2)
 
 		keys := make(map[string]bool)
@@ -163,6 +171,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("SetIn / UpdateIn (Empty path)", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]().Set("a", 1)
 		m2 := m.SetIn([]string{}, 10)
 		if m2.Len() != 1 || m2.Get("a") != 1 {
@@ -175,6 +184,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("SetIn / UpdateIn (Basic typed cases)", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, int]()
 		m2 := m.SetIn([]string{"a"}, 10)
 		v := m2.Get("a")
@@ -190,6 +200,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("SetIn / UpdateIn (Nested any cases)", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, any]()
 		m2 := m.SetIn([]string{"a", "b"}, 42)
 
@@ -214,6 +225,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("SetIn (Intermediate not a map)", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, any]().Set("a", 123)
 		m2 := m.SetIn([]string{"a", "b"}, 456)
 		val := m2.Get("a")
@@ -224,6 +236,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("UpdateIn (Intermediate not a map)", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, any]().Set("a", 123)
 		m2 := m.UpdateIn([]string{"a", "b"}, func(v any) any { return v })
 		val := m2.Get("a")
@@ -234,6 +247,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("SetIn (Existing submap)", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, any]()
 		m2 := m.SetIn([]string{"a", "b"}, 1)
 		m3 := m2.SetIn([]string{"a", "c"}, 2)
@@ -246,6 +260,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("DeleteIn", func(t *testing.T) {
+		t.Parallel()
 		m := NewMap[string, any]().SetIn([]string{"a", "b", "c"}, 100)
 		m2 := m.DeleteIn([]string{"a", "b", "c"})
 		val := m2.Get("a")
@@ -289,6 +304,7 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("Deep access with list inside map", func(t *testing.T) {
+		t.Parallel()
 		l := NewList[int]().Append(10).Append(20)
 		m := NewMap[string, any]().Set("a", l)
 

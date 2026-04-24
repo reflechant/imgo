@@ -168,8 +168,9 @@ func expandInChain(recv ast.Expr, keys []ast.Expr, tail func(x, k ast.Expr) ast.
 		targets[i] = methodCall(targets[i-1], "Get", keys[i-1])
 	}
 	n := len(keys)
-	res := tail(targets[n-1], keys[n-1])
-	for i := n - 2; i >= 0; i-- {
+	last := n - 1
+	res := tail(targets[last], keys[last])
+	for i := last - 1; i >= 0; i-- {
 		res = methodCall(targets[i], "Set", keys[i], res)
 	}
 
@@ -811,9 +812,10 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 	if !r.isMapLike(receiver) {
 		return e, typeOf(r.info, e)
 	}
+	const minInArgs = 2
 	switch methodName {
 	case "SetIn":
-		if len(e.Args) < 2 {
+		if len(e.Args) < minInArgs {
 			return e, typeOf(r.info, e)
 		}
 		keys := e.Args[:len(e.Args)-1]
@@ -824,7 +826,7 @@ func (r *rewriter) callExpr(e *ast.CallExpr, wantTwoValues bool) (ast.Expr, type
 
 		return res, typeOf(r.info, e)
 	case "UpdateIn":
-		if len(e.Args) < 2 {
+		if len(e.Args) < minInArgs {
 			return e, typeOf(r.info, e)
 		}
 		keys := e.Args[:len(e.Args)-1]

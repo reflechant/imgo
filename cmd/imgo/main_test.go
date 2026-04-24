@@ -8,7 +8,9 @@ import (
 )
 
 func TestRun(t *testing.T) {
+	t.Parallel()
 	t.Run("Usage", func(t *testing.T) {
+		t.Parallel()
 		err := run([]string{"imgo"})
 		if err == nil || err.Error() != "usage: imgo <path>" {
 			t.Errorf("Expected usage error, got %v", err)
@@ -16,6 +18,7 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("No files found", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		err := run([]string{"imgo", tmp})
 		if err == nil || !strings.Contains(err.Error(), "no .im files found") {
@@ -24,6 +27,7 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("Non-existent path", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		err := run([]string{"imgo", filepath.Join(tmp, "nonexistent")})
 		if err == nil || !strings.Contains(err.Error(), "no such file or directory") {
@@ -32,75 +36,85 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("Valid compilation", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		imFile := filepath.Join(tmp, "test.im")
 		code := `package main
 func main() {
 	println("hello")
 }`
-		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
+		err := os.WriteFile(imFile, []byte(code), 0o600)
+		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := run([]string{"imgo", tmp})
+		err = run([]string{"imgo", tmp})
 		if err != nil {
 			t.Errorf("Expected success, got error: %v", err)
 		}
 
 		genFile := filepath.Join(tmp, "test_imgo_gen.go")
-		if _, err := os.Stat(genFile); os.IsNotExist(err) {
+		_, statErr := os.Stat(genFile)
+		if os.IsNotExist(statErr) {
 			t.Errorf("Expected generated file %s to exist", genFile)
 		}
 	})
 
 	t.Run("Syntax Error", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		imFile := filepath.Join(tmp, "test.im")
 		code := `package main
 func main() {
 	println("hello"
 }`
-		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
+		err := os.WriteFile(imFile, []byte(code), 0o600)
+		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := run([]string{"imgo", tmp})
+		err = run([]string{"imgo", tmp})
 		if err == nil || !strings.Contains(err.Error(), "missing ',' before newline") {
 			t.Errorf("Expected syntax error, got %v", err)
 		}
 	})
 
 	t.Run("Parse Error", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		imFile := filepath.Join(tmp, "test.im")
 		// Not a valid Go file at all
 		code := `not a package`
-		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
+		err := os.WriteFile(imFile, []byte(code), 0o600)
+		if err != nil {
 			t.Fatal(err)
 		}
 
-		err := run([]string{"imgo", tmp})
+		err = run([]string{"imgo", tmp})
 		if err == nil || !strings.Contains(err.Error(), "expected 'package'") {
 			t.Errorf("Expected parse error, got %v", err)
 		}
 	})
 
 	t.Run("Create Error", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		imFile := filepath.Join(tmp, "test.im")
 		code := `package main
 func main() {}`
-		if err := os.WriteFile(imFile, []byte(code), 0o644); err != nil {
+		err := os.WriteFile(imFile, []byte(code), 0o600)
+		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Create a directory with the same name as expected generated file
 		genFile := filepath.Join(tmp, "test_imgo_gen.go")
-		if err := os.Mkdir(genFile, 0o755); err != nil {
-			t.Fatal(err)
+		mkdirErr := os.Mkdir(genFile, 0o750)
+		if mkdirErr != nil {
+			t.Fatal(mkdirErr)
 		}
 
-		err := run([]string{"imgo", tmp})
+		err = run([]string{"imgo", tmp})
 		if err == nil || !strings.Contains(err.Error(), "error creating file") {
 			t.Errorf("Expected create error, got %v", err)
 		}

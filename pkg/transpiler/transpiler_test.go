@@ -8,7 +8,9 @@ import (
 )
 
 func TestTranspile(t *testing.T) {
+	t.Parallel()
 	t.Run("Valid code", func(t *testing.T) {
+		t.Parallel()
 		fset := token.NewFileSet()
 		src := `package main
 func main() {
@@ -31,6 +33,7 @@ func main() {
 	})
 
 	t.Run("Validation error", func(t *testing.T) {
+		t.Parallel()
 		fset := token.NewFileSet()
 		// Mutating assignment is prohibited in ImGo
 		src := `package main

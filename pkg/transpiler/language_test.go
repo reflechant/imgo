@@ -62,6 +62,7 @@ func (tc langCase) source() string {
 }
 
 func TestLanguage(t *testing.T) {
+	t.Parallel()
 	cases := []langCase{
 		// --- SSA / scoping ---------------------------------------------------
 		{
@@ -579,7 +580,7 @@ func TestLanguage(t *testing.T) {
 		// Prefix with a comment identifying the case for human readers.
 		caseSrc = fmt.Sprintf("// case %d: %s\n", i, tc.name) + caseSrc
 		path := filepath.Join(dir, fmt.Sprintf("case%d.go", i))
-		err := os.WriteFile(path, []byte(caseSrc), 0o644)
+		err := os.WriteFile(path, []byte(caseSrc), 0o600)
 		if err != nil {
 			t.Fatalf("write case%d.go: %v", i, err)
 		}
@@ -594,19 +595,21 @@ func TestLanguage(t *testing.T) {
 	}
 	mb.WriteString("}\n")
 	mainPath := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(mainPath, []byte(mb.String()), 0o644); err != nil {
+	err = os.WriteFile(mainPath, []byte(mb.String()), 0o600)
+	if err != nil {
 		t.Fatalf("write main.go: %v", err)
 	}
 	filePaths = append(filePaths, mainPath)
 
 	// One compilation for all cases.
 	args := append([]string{"run"}, filePaths...)
-	cmd := exec.Command("go", args...)
+	cmd := exec.CommandContext(t.Context(), "go", args...) //nolint:gosec
 	cmd.Dir = root
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		t.Fatalf("go run failed: %v\nstderr:\n%s\nstdout:\n%s",
 			err, stderr.String(), stdout.String())
 	}
@@ -618,6 +621,7 @@ func TestLanguage(t *testing.T) {
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			if got := parts[i]; got != tc.want {
 				t.Errorf("output mismatch\n--- want ---\n%s--- got ---\n%s--- generated Go ---\n%s",
 					tc.want, got, goSrcs[i])

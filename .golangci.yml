@@ -5,6 +5,14 @@ run:
 
 linters:
   default: all
+  settings:
+    ireturn:
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+        - generic
   disable:
     - depguard
     - exhaustruct
@@ -20,6 +28,12 @@ linters:
     - wrapcheck
     - wsl
     - wsl_v5
+    # Complexity linters are too noisy for AST manipulation and transpiler codebases
+    - cyclop
+    - gocognit
+    - gocyclo
+    - maintidx
+    - nestif
 
 formatters:
   enable:
