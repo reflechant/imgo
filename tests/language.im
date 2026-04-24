@@ -1,0 +1,439 @@
+// ImGo Language Semantics Test Suite
+// This file serves as both exhaustive unit tests and living documentation.
+//
+// Syntax:
+//   // @test <name>
+//   <imgo code>
+//   // @assert <expression>
+
+// --- SSA / Scoping -----------------------------------------------------------
+
+// @test basic arithmetic
+x := 5
+y := x + 1
+// @assert x == 5
+// @assert y == 6
+
+// @test rebinding produces a fresh value
+x := 1
+x := x + 10
+// @assert x == 11
+
+// @test closure captures the binding at creation time
+x := 10
+f := func() int { return x }
+x := 20
+r := f()
+s := x
+// @assert r == 10
+// @assert s == 20
+
+// @test if init does not leak to the enclosing scope
+x := 1
+if x := 2; x > 0 {
+    // inner x is 2 but invisible after the block
+}
+y := x
+// @assert y == 1
+
+// @test switch init does not leak
+x := 1
+switch x := 2; {
+default:
+    _ = x
+}
+y := x
+// @assert y == 1
+
+// @test for body shadow doesn't leak
+x := 1
+for i := 0; i < 3; {
+    x := i + 10
+    _ = x
+    break
+}
+y := x
+// @assert y == 1
+
+// @test range body shadow doesn't leak
+x := 1
+l := []int{100, 200}
+for _, x := range l {
+    _ = x
+}
+y := x
+// @assert y == 1
+
+// @test else-if init binds its own scope
+r := 0
+if x := 0; x > 0 {
+    r = 1
+} else if y := 5; y > 0 {
+    r = y
+}
+// @assert r == 5
+
+// --- Map literals, get, set, delete ------------------------------------------
+
+// @test map literal + index
+m := map[string]int{"a": 1, "b": 2}
+a := m["a"]
+b := m["b"]
+n := len(m)
+// @assert a == 1
+// @assert b == 2
+// @assert n == 2
+
+// @test missing key returns the zero value
+m := map[string]int{"a": 1}
+z := m["missing"]
+// @assert z == 0
+
+// @test two-value index reports presence
+m := map[string]int{"a": 1}
+v1, ok1 := m["a"]
+v2, ok2 := m["x"]
+// @assert v1 == 1
+// @assert ok1 == true
+// @assert v2 == 0
+// @assert ok2 == false
+
+// @test Set returns a new map, original unchanged
+m := map[string]int{"a": 1}
+m1 := m.Set("b", 2)
+n := len(m)
+n1 := len(m1)
+b := m1["b"]
+// @assert n == 1
+// @assert n1 == 2
+// @assert b == 2
+
+// @test Delete returns a new map
+m := map[string]int{"a": 1, "b": 2}
+m1 := m.Delete("a")
+n := len(m)
+n1 := len(m1)
+_, ok := m1["a"]
+// @assert n == 2
+// @assert n1 == 1
+// @assert ok == false
+
+// --- List literals, index, Append, slice -------------------------------------
+
+// @test list literal + index + len
+l := []int{10, 20, 30}
+a := l[0]
+b := l[2]
+n := len(l)
+// @assert a == 10
+// @assert b == 30
+// @assert n == 3
+
+// @test Append returns a new list
+l := []int{1, 2}
+l1 := l.Append(3)
+n := len(l)
+n1 := len(l1)
+last := l1[2]
+// @assert n == 2
+// @assert n1 == 3
+// @assert last == 3
+
+// @test slice with explicit bounds
+l := []int{10, 20, 30, 40, 50}
+s := l[1:4]
+n := len(s)
+first := s[0]
+last := s[2]
+// @assert n == 3
+// @assert first == 20
+// @assert last == 40
+
+// @test slice with open-ended bounds
+l := []int{10, 20, 30, 40, 50}
+a := len(l[:3])
+b := len(l[2:])
+c := len(l[:])
+d := len(l[2:2])
+// @assert a == 3
+// @assert b == 3
+// @assert c == 5
+// @assert d == 0
+
+// --- Builtins ----------------------------------------------------------------
+
+// @test fixed-size arrays
+a := [2]int{1, 2}
+v0 := a[0]
+v1 := a[1]
+n := len(a)
+// @assert v0 == 1
+// @assert v1 == 2
+// @assert n == 2
+
+// @test map builtins with mangled names
+m := map[string]int{"a": 1}
+m := delete(m, "a")
+m := set(m, "b", 2)
+m := update(m, "b", func(x int) int { return x + 10 })
+v := get(m, "b")
+n := len(m)
+// @assert v == 12
+// @assert n == 1
+
+// @test array get/update
+a := [3]int{10, 20, 30}
+v1 := get(a, 1)
+a2 := update(a, 1, func(x int) int { return x + 5 })
+v2 := a2[1]
+a3 := update(a2, 0, func(x int) int { return x + 5 })
+v3 := a3[0]
+n := len(a3)
+orig := a[1]
+// @assert v1 == 20
+// @assert v2 == 25
+// @assert v3 == 15
+// @assert n == 3
+// @assert orig == 20
+
+// @test append builtin on a list
+l := []int{10, 20}
+l1 := append(l, 30)
+l2 := append(l1, 40, 50)
+n0 := len(l)
+n1 := len(l1)
+n2 := len(l2)
+v0 := l[0]
+v1 := l1[2]
+v2 := l2[4]
+// @assert n0 == 2
+// @assert n1 == 3
+// @assert n2 == 5
+// @assert v0 == 10
+// @assert v1 == 30
+// @assert v2 == 50
+
+// @test set/get builtins on a list
+l := []int{10, 20}
+l1 := set(l, 1, 25)
+v := get(l1, 1)
+v0 := l1[0]
+// @assert v == 25
+// @assert v0 == 10
+
+// @test set/get/update/delete builtins on a map
+m := map[string]int{"a": 1}
+m1 := set(m, "b", 2)
+v := get(m1, "a")
+w := get(m1, "b")
+m2 := update(m1, "a", func(x int) int { return x * 10 })
+a := get(m2, "a")
+m3 := delete(m2, "b")
+n := len(m3)
+// @assert v == 1
+// @assert w == 2
+// @assert a == 10
+// @assert n == 1
+
+// @test two-value get builtin reports presence
+m := map[string]int{"a": 1}
+v, ok := get(m, "missing")
+// @assert v == 0
+// @assert ok == false
+
+// @test getIn/setIn/updateIn/deleteIn walk nested maps
+m := map[string]map[string]int{
+    "a": map[string]int{"b": 1},
+}
+v1 := getIn(m, "a", "b")
+m1 := setIn(m, "a", "c", 2)
+v2 := getIn(m1, "a", "c")
+m2 := setIn(m, "x", "y", 3)
+v3 := getIn(m2, "x", "y")
+m3 := updateIn(m1, "a", "b", func(x int) int { return x + 10 })
+v4 := getIn(m3, "a", "b")
+m4 := deleteIn(m1, "a", "b")
+_, ok := get(m4["a"], "b")
+// @assert v1 == 1
+// @assert v2 == 2
+// @assert v3 == 3
+// @assert v4 == 11
+// @assert ok == false
+
+// @test builtin shadowed by local function is not rewritten
+set := func(_ any, _ string, v int) int { return v + 100 }
+m := map[string]int{"a": 1}
+x := set(m, "a", 7)
+// @assert x == 107
+
+// --- make --------------------------------------------------------------------
+
+// @test make map produces an empty persistent map
+m := make(map[string]int)
+m1 := m.Set("a", 1)
+n := len(m)
+n1 := len(m1)
+// @assert n == 0
+// @assert n1 == 1
+
+// @test make list produces an empty persistent list (size hint ignored)
+l := make([]int, 10)
+n := len(l)
+l1 := l.Append(42)
+n1 := len(l1)
+first := l1[0]
+// @assert n == 0
+// @assert n1 == 1
+// @assert first == 42
+
+// --- Struct builtins ---------------------------------------------------------
+
+// @test get/update on a struct lower to field access / IIFE
+type Point struct{ X, Y int }
+p := Point{X: 1, Y: 2}
+a := get(p, "X")
+b := get(p, "Y")
+p2 := update(p, "Y", func(y int) int { return y + 10 })
+// @assert a == 1
+// @assert b == 2
+// @assert p.X == 1
+// @assert p.Y == 2
+// @assert p2.X == 1
+// @assert p2.Y == 12
+
+// --- List builtins -----------------------------------------------------------
+
+// @test get/set builtins dispatch to list methods
+l := []int{10, 20, 30}
+v := get(l, 1)
+l2 := set(l, 0, 99)
+first := get(l2, 0)
+orig := get(l, 0)
+// @assert v == 20
+// @assert first == 99
+// @assert orig == 10
+
+// --- Nested composite literals -----------------------------------------------
+
+// @test map of lists: literal creation and element access
+m := map[string][]int{
+    "a": {1, 2, 3},
+    "b": {4, 5},
+}
+na := m["a"]
+v := na[1]
+nb := len(m)
+nl := len(na)
+// @assert v == 2
+// @assert nb == 2
+// @assert nl == 3
+
+// @test list of maps: literal creation and element access
+l := []map[string]int{
+    {"a": 1, "b": 2},
+    {"c": 3},
+}
+m0 := l[0]
+v := m0["a"]
+n := len(l)
+// @assert v == 1
+// @assert n == 2
+
+// @test map of structs: implicit struct element gets explicit type
+type Point struct{ X, Y int }
+m := map[string]Point{
+    "p": {X: 1, Y: 2},
+    "q": {X: 3, Y: 4},
+}
+p := m["p"]
+px := p.X
+py := p.Y
+// @assert px == 1
+// @assert py == 2
+
+// @test struct with persistent fields: type rewritten, access works
+type Config struct {
+    Tags   []string
+    Scores map[string]int
+}
+c := Config{
+    Tags:   []string{"alpha", "beta"},
+    Scores: map[string]int{"x": 10, "y": 20},
+}
+n := len(c.Tags)
+tag := c.Tags[0]
+score := c.Scores["x"]
+// @assert n == 2
+// @assert tag == "alpha"
+// @assert score == 10
+
+// --- Expression forms --------------------------------------------------------
+
+// @test unary, star, paren exprs and var-with-value decls
+x := 5
+y := -x
+z := (x + 1)
+p := &x
+d := *p
+var v int = 7
+var _ int = 99
+{
+    a := x
+    _ = a
+}
+// @assert y == -5
+// @assert z == 6
+// @assert d == 5
+// @assert v == 7
+
+// @test defer runs
+f := func() int {
+    defer func() { _ = 1 }()
+    return 42
+}
+res := f()
+// @assert res == 42
+
+// @test range over list
+l := []int{10, 20, 30}
+for i, v := range l {
+    _ = i
+    _ = v
+}
+// @assert len(l) == 3
+
+// --- Builtin Edge Cases ------------------------------------------------------
+
+// @test getIn two-value form for maps
+m := map[string]map[string]int{
+    "a": {"b": 1},
+}
+v1, ok1 := getIn(m, "a", "b")
+v2, ok2 := getIn(m, "a", "missing")
+v3, ok3 := getIn(m, "missing", "b")
+// @assert v1 == 1
+// @assert ok1 == true
+// @assert v2 == 0
+// @assert ok2 == false
+// @assert v3 == 0
+// @assert ok3 == false
+
+// @test list getIn and append multiple
+l := [][]int{{1, 2}, {3, 4}}
+v := getIn(l, 0, 1)
+l2 := append(l, []int{5, 6}, []int{7, 8})
+n := len(l2)
+v2 := getIn(l2, 3, 0)
+// @assert v == 2
+// @assert n == 4
+// @assert v2 == 7
+
+// @test struct getIn and updateIn
+type Inner struct { V int }
+type Outer struct { I Inner }
+o := Outer{I: Inner{V: 10}}
+v := getIn(o, "I", "V")
+o2 := updateIn(o, "I", "V", func(x int) int { return x + 5 })
+v2 := o2.I.V
+// @assert v == 10
+// @assert v2 == 15
