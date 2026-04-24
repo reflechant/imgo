@@ -31,7 +31,7 @@ s := x
 // @test if init does not leak to the enclosing scope
 x := 1
 if x := 2; x > 0 {
-    // inner x is 2 but invisible after the block
+	// inner x is 2 but invisible after the block
 }
 y := x
 // @assert y == 1
@@ -40,7 +40,7 @@ y := x
 x := 1
 switch x := 2; {
 default:
-    _ = x
+	_ = x
 }
 y := x
 // @assert y == 1
@@ -48,9 +48,9 @@ y := x
 // @test for body shadow doesn't leak
 x := 1
 for i := 0; i < 3; {
-    x := i + 10
-    _ = x
-    break
+	x := i + 10
+	_ = x
+	break
 }
 y := x
 // @assert y == 1
@@ -59,7 +59,7 @@ y := x
 x := 1
 l := []int{100, 200}
 for _, x := range l {
-    _ = x
+	_ = x
 }
 y := x
 // @assert y == 1
@@ -67,9 +67,9 @@ y := x
 // @test else-if init binds its own scope
 r := 0
 if x := 0; x > 0 {
-    r = 1
+	r = 1
 } else if y := 5; y > 0 {
-    r = y
+	r = y
 }
 // @assert r == 5
 
@@ -243,7 +243,7 @@ v, ok := get(m, "missing")
 
 // @test getIn/setIn/updateIn/deleteIn walk nested maps
 m := map[string]map[string]int{
-    "a": map[string]int{"b": 1},
+	"a": map[string]int{"b": 1},
 }
 v1 := getIn(m, "a", "b")
 m1 := setIn(m, "a", "c", 2)
@@ -317,8 +317,8 @@ orig := get(l, 0)
 
 // @test map of lists: literal creation and element access
 m := map[string][]int{
-    "a": {1, 2, 3},
-    "b": {4, 5},
+	"a": {1, 2, 3},
+	"b": {4, 5},
 }
 na := m["a"]
 v := na[1]
@@ -330,8 +330,8 @@ nl := len(na)
 
 // @test list of maps: literal creation and element access
 l := []map[string]int{
-    {"a": 1, "b": 2},
-    {"c": 3},
+	{"a": 1, "b": 2},
+	{"c": 3},
 }
 m0 := l[0]
 v := m0["a"]
@@ -342,8 +342,8 @@ n := len(l)
 // @test map of structs: implicit struct element gets explicit type
 type Point struct{ X, Y int }
 m := map[string]Point{
-    "p": {X: 1, Y: 2},
-    "q": {X: 3, Y: 4},
+	"p": {X: 1, Y: 2},
+	"q": {X: 3, Y: 4},
 }
 p := m["p"]
 px := p.X
@@ -353,12 +353,12 @@ py := p.Y
 
 // @test struct with persistent fields: type rewritten, access works
 type Config struct {
-    Tags   []string
-    Scores map[string]int
+	Tags   []string
+	Scores map[string]int
 }
 c := Config{
-    Tags:   []string{"alpha", "beta"},
-    Scores: map[string]int{"x": 10, "y": 20},
+	Tags:   []string{"alpha", "beta"},
+	Scores: map[string]int{"x": 10, "y": 20},
 }
 n := len(c.Tags)
 tag := c.Tags[0]
@@ -378,8 +378,8 @@ d := *p
 var v int = 7
 var _ int = 99
 {
-    a := x
-    _ = a
+	a := x
+	_ = a
 }
 // @assert y == -5
 // @assert z == 6
@@ -388,8 +388,8 @@ var _ int = 99
 
 // @test defer runs
 f := func() int {
-    defer func() { _ = 1 }()
-    return 42
+	defer func() { _ = 1 }()
+	return 42
 }
 res := f()
 // @assert res == 42
@@ -397,8 +397,8 @@ res := f()
 // @test range over list
 l := []int{10, 20, 30}
 for i, v := range l {
-    _ = i
-    _ = v
+	_ = i
+	_ = v
 }
 // @assert len(l) == 3
 
@@ -406,7 +406,7 @@ for i, v := range l {
 
 // @test getIn two-value form for maps
 m := map[string]map[string]int{
-    "a": {"b": 1},
+	"a": {"b": 1},
 }
 v1, ok1 := getIn(m, "a", "b")
 v2, ok2 := getIn(m, "a", "missing")
@@ -429,8 +429,8 @@ v2 := getIn(l2, 3, 0)
 // @assert v2 == 7
 
 // @test struct getIn and updateIn
-type Inner struct { V int }
-type Outer struct { I Inner }
+type Inner struct{ V int }
+type Outer struct{ I Inner }
 o := Outer{I: Inner{V: 10}}
 v := getIn(o, "I", "V")
 o2 := updateIn(o, "I", "V", func(x int) int { return x + 5 })

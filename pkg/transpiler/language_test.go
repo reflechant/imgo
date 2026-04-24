@@ -137,7 +137,8 @@ func TestLanguage(t *testing.T) {
 	require.GreaterOrEqual(t, len(parts), len(cases), "output split produced too few parts")
 
 	for i, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		name := fmt.Sprintf("%02d_%s", i+1, tc.name)
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			output := strings.TrimSpace(parts[i])
 			if output != "" {
