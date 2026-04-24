@@ -9,6 +9,9 @@ import (
 	"go/types"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // wrap auto-wraps a bare body snippet with package+main unless the snippet
@@ -27,9 +30,8 @@ func rewriteSrc(t *testing.T, src string) string {
 	t.Helper()
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "test.im", wrap(src), 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	require.NoError(t, err, "parse")
+
 	f = Rewrite(f, typeCheck(fset, f))
 	var buf bytes.Buffer
 	_ = printer.Fprint(&buf, fset, f)
@@ -42,9 +44,7 @@ func rewriteSrc(t *testing.T, src string) string {
 func assertContainsAll(t *testing.T, got string, wants ...string) {
 	t.Helper()
 	for _, w := range wants {
-		if !strings.Contains(got, w) {
-			t.Errorf("missing %q in output:\n%s", w, got)
-		}
+		assert.Contains(t, got, w)
 	}
 }
 
@@ -506,25 +506,21 @@ func TestRewriteEdgeCases(t *testing.T) {
 
 	// nil block / nil expr
 	newR().block(nil)
-	if got, _ := newR().expr(nil, false); got != nil {
-		t.Errorf("expr(nil) = %v, want nil", got)
-	}
+	got, _ := newR().expr(nil, false)
+	assert.Nil(t, got)
 
 	// setPos corners
 	ident := ast.NewIdent("x")
-	if setPos(ident, token.NoPos) != ident {
-		t.Errorf("setPos(ident, NoPos) should return ident unchanged")
-	}
-	setPos(ast.NewIdent("x"), token.Pos(1))
-	setPos(&ast.CallExpr{}, token.Pos(1))
-	setPos(&ast.SelectorExpr{
+	assert.Equal(t, ident, setPos(ident, token.NoPos))
+
+	assert.NotNil(t, setPos(ast.NewIdent("x"), token.Pos(1)))
+	assert.NotNil(t, setPos(&ast.CallExpr{}, token.Pos(1)))
+	assert.NotNil(t, setPos(&ast.SelectorExpr{
 		X:   &ast.BasicLit{Kind: token.INT, Value: "1"},
 		Sel: ast.NewIdent("Foo"),
-	}, token.Pos(1))
-	setPos(&ast.IndexListExpr{}, token.Pos(1))
-	if setPos(nil, token.Pos(1)) != nil {
-		t.Errorf("setPos(nil) should return nil")
-	}
+	}, token.Pos(1)))
+	assert.NotNil(t, setPos(&ast.IndexListExpr{}, token.Pos(1)))
+	assert.Nil(t, setPos(nil, token.Pos(1)))
 
 	// addPersistentImport when no import decl exists yet
 	addPersistentImport(&ast.File{
@@ -534,9 +530,7 @@ func TestRewriteEdgeCases(t *testing.T) {
 	})
 
 	// nil type returns nil
-	if newR().typ(nil) != nil {
-		t.Errorf("typ(nil) should return nil")
-	}
+	assert.Nil(t, newR().typ(nil))
 
 	// LHS that isn't an Ident in a DEFINE — leave it alone
 	newR().stmt(&ast.AssignStmt{

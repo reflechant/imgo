@@ -1,11 +1,12 @@
 package transpiler
 
 import (
-	"errors"
 	"go/parser"
 	"go/token"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidate(t *testing.T) {
@@ -395,22 +396,14 @@ func main() {
 			t.Parallel()
 			fset := token.NewFileSet()
 			f, err := parser.ParseFile(fset, "test.im", tt.code, 0)
-			if err != nil {
-				t.Fatalf("Failed to parse test code: %v", err)
-			}
+			require.NoError(t, err, "Failed to parse test code")
 
 			info := typeCheck(fset, f)
 			err = Validate(fset, f, info)
 			if tt.wantErr == "" {
-				if err != nil {
-					t.Errorf("Validate() unexpected error: %v", err)
-				}
+				assert.NoError(t, err)
 			} else {
-				if err == nil {
-					t.Errorf("Validate() expected error containing %q, got nil", tt.wantErr)
-				} else if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("Validate() error = %v, want error containing %q", err, tt.wantErr)
-				}
+				assert.ErrorContains(t, err, tt.wantErr)
 			}
 		})
 	}
@@ -429,33 +422,21 @@ func main() {
 
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "test.im", code, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	require.NoError(t, err, "parse")
 
 	verr := Validate(fset, f, nil)
-	if verr == nil {
-		t.Fatal("expected diagnostics, got nil")
-	}
+	require.Error(t, verr, "expected diagnostics, got nil")
+
 	var ds Diagnostics
-	if !errors.As(verr, &ds) {
-		t.Fatalf("expected Diagnostics, got %T", verr)
-	}
-	if len(ds) != 3 {
-		t.Fatalf("expected 3 diagnostics, got %d: %v", len(ds), ds)
-	}
+	require.ErrorAs(t, verr, &ds)
+	require.Len(t, ds, 3)
 
 	wantCodes := []string{CodeDisallowedAssignment, CodeDisallowedIncDec, CodeDisallowedBuiltin}
 	for i, d := range ds {
-		if d.Code != wantCodes[i] {
-			t.Errorf("ds[%d].Code = %q, want %q", i, d.Code, wantCodes[i])
-		}
-		if d.Pos.Filename != "test.im" {
-			t.Errorf("ds[%d].Pos.Filename = %q, want test.im", i, d.Pos.Filename)
-		}
-		if d.Pos.Line == 0 || d.Pos.Column == 0 {
-			t.Errorf("ds[%d] missing position: %+v", i, d.Pos)
-		}
+		assert.Equal(t, wantCodes[i], d.Code, "ds[%d].Code", i)
+		assert.Equal(t, "test.im", d.Pos.Filename, "ds[%d].Pos.Filename", i)
+		assert.NotZero(t, d.Pos.Line, "ds[%d] missing line", i)
+		assert.NotZero(t, d.Pos.Column, "ds[%d] missing column", i)
 	}
 }
 
@@ -468,24 +449,17 @@ func main() {
 }`
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "test.im", code, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	require.NoError(t, err, "parse")
+
 	verr := Validate(fset, f, nil)
-	if verr == nil {
-		t.Fatal("expected error, got nil")
-	}
-	msg := verr.Error()
+	require.Error(t, verr, "expected error, got nil")
+
 	want := "test.im:4:2: error[E001] mutation operator = is prohibited"
-	if !strings.Contains(msg, want) {
-		t.Errorf("Error() = %q, want substring %q", msg, want)
-	}
+	assert.ErrorContains(t, verr, want)
 }
 
 func TestEmptyDiagnostics(t *testing.T) {
 	t.Parallel()
 	var ds Diagnostics
-	if got := ds.Error(); got != "" {
-		t.Errorf("empty Diagnostics.Error() = %q, want empty", got)
-	}
+	assert.Empty(t, ds.Error())
 }

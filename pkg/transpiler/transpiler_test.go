@@ -3,8 +3,10 @@ package transpiler
 import (
 	"go/parser"
 	"go/token"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTranspile(t *testing.T) {
@@ -19,17 +21,11 @@ func main() {
 	println(x)
 }`
 		f, err := parser.ParseFile(fset, "test.im", src, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
 		out, err := Transpile(fset, f)
-		if err != nil {
-			t.Fatalf("Expected success, got error: %v", err)
-		}
-		if out == nil {
-			t.Fatal("Expected output file, got nil")
-		}
+		require.NoError(t, err, "Expected success, got error")
+		assert.NotNil(t, out, "Expected output file, got nil")
 	})
 
 	t.Run("Validation error", func(t *testing.T) {
@@ -42,16 +38,10 @@ func main() {
 	x = 2
 }`
 		f, err := parser.ParseFile(fset, "test.im", src, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
 		_, err = Transpile(fset, f)
-		if err == nil {
-			t.Fatal("Expected validation error, got nil")
-		}
-		if !strings.Contains(err.Error(), "is prohibited") {
-			t.Errorf("Expected mutation error, got: %v", err)
-		}
+		require.Error(t, err, "Expected validation error, got nil")
+		assert.ErrorContains(t, err, "is prohibited")
 	})
 }

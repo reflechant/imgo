@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Language tests: the primary suite for ImGo semantics. Each case is a bare
@@ -560,9 +563,7 @@ func TestLanguage(t *testing.T) {
 	}
 
 	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatalf("abs repo root: %v", err)
-	}
+	require.NoError(t, err, "abs repo root")
 	dir := t.TempDir()
 
 	const sep = "\x1c" // ASCII File Separator — not present in any test output
@@ -581,9 +582,7 @@ func TestLanguage(t *testing.T) {
 		caseSrc = fmt.Sprintf("// case %d: %s\n", i, tc.name) + caseSrc
 		path := filepath.Join(dir, fmt.Sprintf("case%d.go", i))
 		err := os.WriteFile(path, []byte(caseSrc), 0o600)
-		if err != nil {
-			t.Fatalf("write case%d.go: %v", i, err)
-		}
+		require.NoError(t, err, "write case%d.go", i)
 		filePaths = append(filePaths, path)
 	}
 
@@ -596,9 +595,7 @@ func TestLanguage(t *testing.T) {
 	mb.WriteString("}\n")
 	mainPath := filepath.Join(dir, "main.go")
 	err = os.WriteFile(mainPath, []byte(mb.String()), 0o600)
-	if err != nil {
-		t.Fatalf("write main.go: %v", err)
-	}
+	require.NoError(t, err, "write main.go")
 	filePaths = append(filePaths, mainPath)
 
 	// One compilation for all cases.
@@ -609,23 +606,17 @@ func TestLanguage(t *testing.T) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	if err != nil {
-		t.Fatalf("go run failed: %v\nstderr:\n%s\nstdout:\n%s",
-			err, stderr.String(), stdout.String())
-	}
+	require.NoErrorf(t, err, "go run failed\nstderr:\n%s\nstdout:\n%s",
+		stderr.String(), stdout.String())
 
 	// Split on separator; last element is "" (after the final sep).
 	parts := strings.Split(stdout.String(), sep)
-	if len(parts) < len(cases) {
-		t.Fatalf("output split produced %d parts, want at least %d", len(parts), len(cases))
-	}
+	require.GreaterOrEqual(t, len(parts), len(cases), "output split produced too few parts")
+
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := parts[i]; got != tc.want {
-				t.Errorf("output mismatch\n--- want ---\n%s--- got ---\n%s--- generated Go ---\n%s",
-					tc.want, got, goSrcs[i])
-			}
+			assert.Equalf(t, tc.want, parts[i], "output mismatch\n--- generated Go ---\n%s", goSrcs[i])
 		})
 	}
 }

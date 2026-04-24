@@ -8,20 +8,19 @@ import (
 	"go/types"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsMapLike(t *testing.T) {
 	t.Parallel()
 	dummy := ast.NewIdent("x")
 
-	if !isMapLike(nil, dummy) {
-		t.Errorf("isMapLike(nil, _) = false, want true (fallback)")
-	}
+	assert.True(t, isMapLike(nil, dummy))
 
 	emptyInfo := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
-	if !isMapLike(emptyInfo, dummy) {
-		t.Errorf("isMapLike(empty, _) = false, want true (fallback)")
-	}
+	assert.True(t, isMapLike(emptyInfo, dummy))
 
 	src := `package main
 type S struct{}
@@ -32,9 +31,8 @@ func main() {
 }`
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "x.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	require.NoError(t, err)
+
 	info := typeCheck(fset, f)
 
 	var sIdent, mIdent *ast.Ident
@@ -57,24 +55,18 @@ func main() {
 		return true
 	})
 
-	if sIdent == nil || mIdent == nil {
-		t.Fatalf("could not locate typed idents: s=%v m=%v", sIdent, mIdent)
-	}
-	if isMapLike(info, sIdent) {
-		t.Errorf("isMapLike struct ident = true, want false")
-	}
-	if !isMapLike(info, mIdent) {
-		t.Errorf("isMapLike map ident = false, want true")
-	}
+	require.NotNil(t, sIdent, "could not locate sIdent")
+	require.NotNil(t, mIdent, "could not locate mIdent")
+
+	assert.False(t, isMapLike(info, sIdent))
+	assert.True(t, isMapLike(info, mIdent))
 }
 
 func TestIsArrayLike(t *testing.T) {
 	t.Parallel()
 	dummy := ast.NewIdent("x")
 
-	if isArrayLike(nil, dummy) {
-		t.Errorf("isArrayLike(nil, _) = true, want false (fallback)")
-	}
+	assert.False(t, isArrayLike(nil, dummy))
 
 	src := `package main
 func main() {
@@ -84,9 +76,8 @@ func main() {
 }`
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "x.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	require.NoError(t, err)
+
 	info := typeCheck(fset, f)
 
 	var aIdent, sIdent *ast.Ident
@@ -109,15 +100,11 @@ func main() {
 		return true
 	})
 
-	if aIdent == nil || sIdent == nil {
-		t.Fatalf("could not locate typed idents: a=%v s=%v", aIdent, sIdent)
-	}
-	if !isArrayLike(info, aIdent) {
-		t.Errorf("isArrayLike array ident = false, want true")
-	}
-	if isArrayLike(info, sIdent) {
-		t.Errorf("isArrayLike slice ident = true, want false")
-	}
+	require.NotNil(t, aIdent, "could not locate aIdent")
+	require.NotNil(t, sIdent, "could not locate sIdent")
+
+	assert.True(t, isArrayLike(info, aIdent))
+	assert.False(t, isArrayLike(info, sIdent))
 }
 
 func TestTypeExprFor(t *testing.T) {
@@ -173,27 +160,17 @@ func TestTypeExprFor(t *testing.T) {
 			t.Parallel()
 			expr := typeExprFor(tc.typ)
 			if tc.want == "" {
-				if expr != nil {
-					t.Errorf("expected nil for %s, got %T", tc.name, expr)
-				}
+				assert.Nil(t, expr)
 
 				return
 			}
-			if expr == nil {
-				t.Errorf("expected %s, got nil", tc.want)
-
-				return
-			}
+			require.NotNil(t, expr)
 
 			fset := token.NewFileSet()
 			var buf strings.Builder
 			err := printer.Fprint(&buf, fset, expr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := buf.String(); got != tc.want {
-				t.Errorf("got %s, want %s", got, tc.want)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, buf.String())
 		})
 	}
 }
