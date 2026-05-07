@@ -22,11 +22,11 @@ x := x + 10
 // @test closure captures the binding at creation time
 x := 10
 f := func() int { return x }
-x := 20
+x := x + 1
 r := f()
 s := x
 // @assert r == 10
-// @assert s == 20
+// @assert s == 11
 
 // @test if init does not leak to the enclosing scope
 x := 1
@@ -75,7 +75,7 @@ if x := 0; x > 0 {
 
 // --- Map literals, get, set, delete ------------------------------------------
 
-// @test map literal + index
+// @test map literal + key
 m := map[string]int{"a": 1, "b": 2}
 a := m["a"]
 b := m["b"]
